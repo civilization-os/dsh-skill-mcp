@@ -14,7 +14,8 @@ export const zh = {
   skillFootnote: '新来源默认禁用。启用后，Skill provider 会扫描其中的技能。配置变更会自动生效。',
   mcpFootnote: '新服务器默认禁用。启用后会执行所填命令或连接所填地址。配置变更会自动生效。',
   secret: '请勿填写密钥或带令牌的地址。此版本暂不支持认证参数。',
-  discovered: '可见工具', noTools: '尚未发现工具', skillHint: '启用后由 Skill provider 扫描；本页管理整个来源。',
+  tools: '工具列表', status_available: '工具可用', status_waiting: '等待发现工具', status_disabled: '已禁用',
+  skillHint: '启用后由 Skill provider 扫描；本页管理整个来源。',
 }
 export const en = {
   navSkill: 'Skills', navMcp: 'MCP',
@@ -31,5 +32,6 @@ export const en = {
   skillFootnote: 'New sources are disabled. Once enabled, the Skill provider scans them automatically.',
   mcpFootnote: 'New servers are disabled. Enabling one runs its command or connects to its endpoint; changes apply automatically.',
   secret: 'Do not enter secrets or token-bearing URLs. Authentication fields are not supported yet.',
-  discovered: 'Visible tools', noTools: 'No tools discovered yet', skillHint: 'The Skill provider scans enabled sources; this page manages the entire source.',
+  tools: 'Tools', status_available: 'Tools available', status_waiting: 'Waiting for tools', status_disabled: 'Disabled',
+  skillHint: 'The Skill provider scans enabled sources; this page manages the entire source.',
 }

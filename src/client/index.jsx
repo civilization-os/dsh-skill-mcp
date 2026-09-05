@@ -50,7 +50,7 @@ function ManagerSection({ kind, t, useManager, request }) {
         <button type="button" disabled={busy || !state.revision} onClick={() => setForm(kind)}>{t(kind === 'skill' ? 'add' : 'addMcp')}</button></header>
       {rows.length === 0 && <div className="dsh-ext-empty"><strong>{t(kind === 'skill' ? 'emptySkills' : 'emptyMcp')}</strong><p>{t(kind === 'skill' ? 'emptySkillsHint' : 'emptyMcpHint')}</p></div>}
       <ul>{rows.map(row => <li key={row.id}><div className="dsh-ext-details"><strong>{row.id}</strong><code>{row.location}</code>
-        <small>{t(row.enabled ? 'enabled' : 'disabled')}{kind === 'mcp' && ` · ${row.toolCount ? `${t('discovered')}: ${row.toolCount}` : t('noTools')}`}</small></div>
+        {kind === 'mcp' ? <McpRuntime row={row} t={t} /> : <small>{t(row.enabled ? 'enabled' : 'disabled')}</small>}</div>
         <button type="button" role="switch" aria-checked={row.enabled} aria-label={`${t(row.enabled ? 'disable' : 'enable')} ${row.id}`} disabled={busy}
           onClick={() => request('enable', { id: row.id, enabled: !row.enabled })}>{t(row.enabled ? 'disable' : 'enable')}</button></li>)}</ul>
       {form === kind && <AddForm kind={kind} t={t} busy={busy} onCancel={() => setForm(null)} onSave={async args => {
@@ -59,6 +59,19 @@ function ManagerSection({ kind, t, useManager, request }) {
     </section>
     <p className="dsh-ext-footnote">{t(kind === 'skill' ? 'skillFootnote' : 'mcpFootnote')}</p>
   </section>
+}
+
+function McpRuntime({ row, t }) {
+  const tools = row.tools ?? []
+  const state = !row.enabled ? 'disabled' : tools.length ? 'available' : 'waiting'
+  const prefix = `mcp__${row.id}__`
+  return <div className="dsh-ext-runtime">
+    <span className={`dsh-ext-status dsh-ext-status-${state}`} aria-hidden="true" />
+    <span className="dsh-ext-status-label">{t(`status_${state}`)}</span>
+    {tools.length > 0 && <details><summary>{t('tools')} · {tools.length}</summary>
+      <ul className="dsh-ext-tools">{tools.map(name => <li key={name}><code title={name}>{name.startsWith(prefix) ? name.slice(prefix.length) : name}</code></li>)}</ul>
+    </details>}
+  </div>
 }
 
 function AddForm({ kind, t, busy, onSave, onCancel }) {

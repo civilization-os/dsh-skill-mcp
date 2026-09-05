@@ -24,8 +24,8 @@ export async function describeExtensions(store, ctx) {
         : row.config.transport === 'streamable-http' ? new URL(row.config.url).origin
           : row.config.customSkillDirs[0],
       transport: row.config.transport ?? '',
-      toolCount: row.config.serverName
-        ? toolNames.filter(name => name.startsWith(`mcp__${row.id}__`)).length : 0,
+      tools: row.config.serverName
+        ? toolNames.filter(name => name.startsWith(`mcp__${row.id}__`)).sort() : [],
     })),
   }
 }

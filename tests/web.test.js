@@ -14,7 +14,9 @@ async function fixture(t) {
   const path = join(directory, 'extensions.json')
   await writeFile(path, '[{"insert":[]}]')
   const store = new ExtensionStore(path)
-  const handler = createWebHandler(store, { tools: { schemas: () => [{ name: 'mcp__demo__ping' }] } })
+  const handler = createWebHandler(store, { tools: { schemas: () => [
+    { name: 'mcp__demo__ping' }, { name: 'mcp__other__ignore' }, { name: 'mcp__demo__alpha' },
+  ] } })
   return { directory, store, call: (method, payload) => handler(method, payload, new AbortController().signal) }
 }
 
@@ -45,7 +47,7 @@ test('MCP view reports observed tools independently of configured enabled state'
   await store.addMcp('demo', { transport: 'streamable-http', url: 'http://localhost:9000/mcp' })
   const { value } = await call('list', {})
   assert.equal(value.extensions[0].enabled, false)
-  assert.equal(value.extensions[0].toolCount, 1)
+  assert.deepEqual(value.extensions[0].tools, ['mcp__demo__alpha', 'mcp__demo__ping'])
 })
 
 test('a slower refresh cannot replace the result of a later save', async () => {
