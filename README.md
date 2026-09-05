@@ -27,7 +27,7 @@ pnpm run web
 
 ## Web 设置页
 
-`src/client` 按官方 `settings.section` 模式注册 Settings 里的两个分区——「Skill 管理」（id `skill-manager`）与「MCP 管理」（id `mcp-manager`），各自一个页面（`ctx.slots.inject('settings.section', …)`，inject `slots`/`locale`/`connection`），共享同一个数据控制器与 managed patch。经 `scripts/build.js` 打包为 `lib/client.js`。该产物不入 Git（见 `.gitignore`），改动 `src/client` 后需先运行 `pnpm run build`。浏览器模块 id 是包名 `deepseek-harness-plugins`，由 `package.json` 的 `dsh.client` 元数据与 `exports["./client"]` 决定。
+`src/client` 按官方 `settings.section` 模式注册 Settings 里的两个分区——「Skill 管理」（id `skill-manager`）与「MCP 管理」（id `mcp-manager`），各自一个页面（`ctx.slots.inject('settings.section', …)`，inject `slots`/`locale`/`connection`），共享同一个数据控制器与 managed patch。管理器允许 live profile patch 在同一个 `insert` 中保留 `extension-manager` 自身的注册行；写入只修改 Skill/MCP 行。经 `scripts/build.js` 打包为 `lib/client.js`。该产物不入 Git（见 `.gitignore`），改动 `src/client` 后需先运行 `pnpm run build`。浏览器模块 id 是包名 `deepseek-harness-plugins`，由 `package.json` 的 `dsh.client` 元数据与 `exports["./client"]` 决定。
 
 Harness 会扫描插件的 `package.json`，把 `./client` bundle 纳入浏览器模块表，无需改动 Harness。管理数据保存在独立 profile 自己的 `.local/harness-home/profiles/web/cordis.patch.yml` 中，因此 Web profile 会实时加载设置页写入的变化。管理插件本身由 `.local/manager.patch.json` 加载：
 
@@ -53,7 +53,7 @@ Harness 会扫描插件的 `package.json`，把 `./client` bundle 纳入浏览�
 
 新来源默认禁用。添加只校验配置，不执行 MCP 命令；启用 MCP 会让 profile 启动其命令或连接其端点。需要明确选择启用的来源。参数和结果会进入会话日志，不能包含密钥、带令牌的 URL 或命令行凭据。
 
-MCP configuration 示例：
+MCP 配置类型在界面中显示为 `stdio` 和 `HTTP`；底层 HTTP transport 使用 Harness 的 `streamable-http` 配置值。Windows 盘符路径会折叠重复转义的反斜杠。MCP configuration 示例：
 
 ```json
 {"transport":"stdio","command":"node","args":["D:/servers/example/server.js"],"cwd":"D:/servers/example"}
@@ -77,4 +77,4 @@ MCP configuration 示例：
 
 模型工具与 Settings 里的「Skill 管理」「MCP 管理」两个分区共享同一份 managed patch 和 `/extensions` RPC，功能一致：列出、添加（Skill 根目录 / MCP 服务器）、启用、禁用。MCP 页面在前台时每 3 秒静默刷新，标签页重新进入前台时立即刷新；状态变化不会触发整页加载提示。MCP 卡片用状态灯区分禁用、等待发现工具和工具可用，并可展开查看该服务器实际注册的工具名。状态来自宿主工具注册表，不等同于独立连接探测。没有独立全屏管理路由；每个分区按来源整体管理，不提供逐技能屏蔽。不复制技能、不从网络下载安装、不管理其他插件已有的配置。尚未集成 MCP OAuth 或凭据引用，因此不接受 `env` 和 `headers`。Skill 添加阶段验证根目录存在，内容解析由启用后的官方 provider 完成；不递归检查 Markdown 引用文件。
 
-16 项自动测试覆盖配置持久化、拒绝无效写入、锁冲突、取消、真实 Cordis 工具调用、Skill provider 加载、真实本地 HTTP MCP 的工具发现/调用/卸载，以及设置写冲突、静默轮询、凭据不外泄、双语词典一致；不需要模型 API key。真实 GUI 验收覆盖两个设置入口、Skill 和 MCP 添加、启停、页面刷新后的持久化，以及启用 MCP 后发现一个实际工具。
+17 项自动测试覆盖配置持久化、拒绝无效写入、锁冲突、取消、实时 profile 中管理器注册的保留、真实 Cordis 工具调用、Skill provider 加载、真实本地 HTTP MCP 的工具发现/调用/卸载，以及设置写冲突、静默轮询、凭据不外泄、双语词典一致；不需要模型 API key。真实 GUI 验收覆盖两个设置入口、Skill 和 MCP 添加、启停、页面刷新后的持久化，以及启用 MCP 后发现一个实际工具。

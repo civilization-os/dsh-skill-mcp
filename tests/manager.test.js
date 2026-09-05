@@ -51,8 +51,11 @@ test('MCP transport validation rejects credential-bearing URLs and malformed con
   await assert.rejects(store.addMcp('bad', { transport: 'streamable-http', url: 'https://host/mcp?token=secret' }), /without credentials/)
   await assert.rejects(store.addMcp('bad', { transport: 'stdio', command: 'node', env: { TOKEN: 'secret' } }), /does not accept/)
   await store.addMcp('demo', { transport: 'stdio', command: 'node', args: ['server.js'] })
+  await store.addMcp('windows', { transport: 'stdio', command: String.raw`C:\\Tools\\mcp.cmd` })
   await store.addMcp('remote', { transport: 'streamable-http', url: 'http://localhost:9000/mcp' })
-  assert.deepEqual((await store.read()).map(row => row.disabled), [true, true])
+  const rows = await store.read()
+  assert.equal(rows.find(row => row.id === 'windows').config.command, String.raw`C:\Tools\mcp.cmd`)
+  assert.deepEqual(rows.map(row => row.disabled), [true, true, true])
 })
 
 test('an existing writer lock refuses a competing write without changing the patch', async t => {
@@ -63,6 +66,20 @@ test('an existing writer lock refuses a competing write without changing the pat
     assert.deepEqual(await store.read(), [])
   } finally { await lock.close(); await unlink(`${path}.lock`) }
   await store.addMcp('demo', { transport: 'stdio', command: 'node' })
+})
+
+test('writes preserve the manager registration in a live profile patch', async t => {
+  const { path, store } = await fixture(t)
+  const manager = {
+    id: 'extension-manager',
+    name: new URL('../src/index.js', import.meta.url).href,
+    config: { patchPath: path },
+  }
+  await writeFile(path, `${JSON.stringify([{ insert: [manager] }])}\n`)
+  await store.addMcp('demo', { transport: 'stdio', command: 'node' })
+  const document = JSON.parse(await readFile(path, 'utf8'))
+  assert.deepEqual(document[0].insert[0], manager)
+  assert.equal((await store.read())[0].id, 'demo')
 })
 
 test('cancellation and corrupted persisted state never overwrite the patch', async t => {

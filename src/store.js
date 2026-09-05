@@ -1,6 +1,6 @@
 /** Owns one JSON-formatted Cordis patch containing managed extensions. */
 import { open, readFile, rename, unlink, stat } from 'node:fs/promises'
-import { isAbsolute } from 'node:path'
+import { isAbsolute, win32 } from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
 import { Config as McpConfig } from '@deepseek-ai/dsh-mcp-client'
 import { Config as SkillConfig } from '@deepseek-ai/dsh-skill-filesystem'
@@ -9,8 +9,14 @@ const modules = {
   skill: import.meta.resolve('@deepseek-ai/dsh-skill-filesystem'),
   mcp: import.meta.resolve('@deepseek-ai/dsh-mcp-client'),
 }
+const managerModule = new URL('./index.js', import.meta.url).href
 const isModule = (value, kind) => [modules[kind], new URL('../src/index.ts', modules[kind]).href, new URL('../lib/index.js', modules[kind]).href].includes(value)
 const idPattern = /^[A-Za-z0-9_-]{1,32}$/
+
+function normalizeWindowsPath(value) {
+  const trimmed = value.trim()
+  return /^[A-Za-z]:[\\/]/.test(trimmed) ? win32.normalize(trimmed) : trimmed
+}
 
 export function revisionOf(rows) {
   return createHash('sha256').update(JSON.stringify(rows)).digest('hex')
@@ -20,12 +26,19 @@ function validateId(id) {
   if (typeof id !== 'string' || !idPattern.test(id)) throw new Error('Id must contain 1–32 letters, digits, underscores or hyphens.')
 }
 
-/** Validate the entire owned patch before exposing or modifying its rows. */
-export function validatePatch(value) {
+function parsePatch(value) {
   if (!Array.isArray(value) || value.length !== 1 || !Array.isArray(value[0]?.insert)
     || Object.keys(value[0]).join() !== 'insert') throw new Error('Expected one managed insert operation.')
   const ids = new Set()
+  const managed = []
+  const preserved = []
   for (const row of value[0].insert) {
+    if (row?.id === 'extension-manager' && row.name === managerModule) {
+      if (ids.has(row.id)) throw new Error('Duplicate extension id.')
+      ids.add(row.id)
+      preserved.push(row)
+      continue
+    }
     if (!row || typeof row !== 'object' || Object.keys(row).sort().join() !== 'config,disabled,id,name') throw new Error('Invalid managed row.')
     validateId(row.id)
     if (ids.has(row.id)) throw new Error('Duplicate extension id.')
@@ -39,8 +52,14 @@ export function validatePatch(value) {
       McpConfig(row.config)
       if (row.config.serverName !== row.id) throw new Error('MCP namespace must match its id.')
     } else throw new Error('Unknown managed plugin module.')
+    managed.push(row)
   }
-  return value[0].insert
+  return { managed, preserved }
+}
+
+/** Validate the patch and return only extension rows owned by the manager. */
+export function validatePatch(value) {
+  return parsePatch(value).managed
 }
 
 /** A store uses an exclusive cross-process lock and atomically replaces its patch. */
@@ -61,17 +80,19 @@ export class ExtensionStore {
     const temp = `${this.path}.${randomUUID()}.tmp`
     let tempExists = false
     try {
-      const rows = await this.read()
+      const parsed = parsePatch(JSON.parse(await readFile(this.path, 'utf8')))
+      const rows = parsed.managed
       if (expectedRevision !== undefined && revisionOf(rows) !== expectedRevision) {
         throw Object.assign(new Error('Configuration changed. Refresh before saving.'), { code: 'CONFLICT' })
       }
       await change(rows)
-      validatePatch([{ insert: rows }])
+      const document = [{ insert: [...parsed.preserved, ...rows] }]
+      validatePatch(document)
       signal?.throwIfAborted()
       const file = await open(temp, 'wx', 0o600)
       tempExists = true
       try {
-        await file.writeFile(`${JSON.stringify([{ insert: rows }], null, 2)}\n`)
+        await file.writeFile(`${JSON.stringify(document, null, 2)}\n`)
         await file.sync()
       } finally { await file.close() }
       signal?.throwIfAborted()
@@ -96,7 +117,12 @@ export class ExtensionStore {
     validateId(id)
     // Authentication values belong in the host credential setup, not tool arguments or logs.
     if (input.env || input.headers) throw new Error('This version does not accept environment values or authentication headers.')
-    const config = McpConfig({ ...input, serverName: id, failOnStartupError: true })
+    const normalized = input.transport === 'stdio' ? {
+      ...input,
+      command: typeof input.command === 'string' ? normalizeWindowsPath(input.command) : input.command,
+      cwd: typeof input.cwd === 'string' && input.cwd ? normalizeWindowsPath(input.cwd) : input.cwd,
+    } : input
+    const config = McpConfig({ ...normalized, serverName: id, failOnStartupError: true })
     if (config.transport === 'streamable-http') {
       const url = new URL(config.url)
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('Use an HTTP(S) endpoint without credentials, query or fragment.')
