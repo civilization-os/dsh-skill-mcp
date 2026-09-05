@@ -1,18 +1,22 @@
-/** Owns one JSON-formatted Cordis patch containing managed extensions. */
+/** Owns a marked block inside a profile Cordis patch while retaining legacy JSON stores. */
 import { open, readFile, rename, unlink, stat } from 'node:fs/promises'
 import { basename, isAbsolute, win32 } from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
 import { Config as McpConfig } from '@deepseek-ai/dsh-mcp-client'
 import { Config as SkillConfig } from '@deepseek-ai/dsh-skill-filesystem'
+import { parse, stringify } from 'yaml'
 
-const modules = {
-  skill: import.meta.resolve('@deepseek-ai/dsh-skill-filesystem'),
-  mcp: import.meta.resolve('@deepseek-ai/dsh-mcp-client'),
+const moduleNames = {
+  skill: '@deepseek-ai/dsh-skill-filesystem',
+  mcp: '@deepseek-ai/dsh-mcp-client',
 }
 const managerModule = new URL('./index.js', import.meta.url).href
-const isModule = (value, kind) => [modules[kind], new URL('../src/index.ts', modules[kind]).href, new URL('../lib/index.js', modules[kind]).href].includes(value)
+const resolvedModules = Object.fromEntries(Object.entries(moduleNames).map(([kind, name]) => [kind, import.meta.resolve(name)]))
+const isModule = (value, kind) => [moduleNames[kind], resolvedModules[kind], new URL('../src/index.ts', resolvedModules[kind]).href, new URL('../lib/index.js', resolvedModules[kind]).href].includes(value)
 const idPattern = /^[A-Za-z0-9_-]{1,32}$/
 const groupField = 'extensionManagerGroup'
+const blockStart = '# dsh-skill-mcp:managed-start'
+const blockEnd = '# dsh-skill-mcp:managed-end'
 
 function normalizeWindowsPath(value) {
   const trimmed = value.trim()
@@ -63,6 +67,35 @@ export function validatePatch(value) {
   return parsePatch(value).managed
 }
 
+function markedRows(content) {
+  const start = content.indexOf(blockStart)
+  const end = content.indexOf(blockEnd)
+  if (start < 0 && end < 0) return undefined
+  if (start < 0 || end < start || content.indexOf(blockStart, start + blockStart.length) >= 0
+    || content.indexOf(blockEnd, end + blockEnd.length) >= 0) throw new Error('Invalid dsh-skill-mcp managed block.')
+  const bodyStart = start + blockStart.length
+  return { start, end: end + blockEnd.length, rows: validatePatch(parse(content.slice(bodyStart, end))) }
+}
+
+function legacyPatch(content) {
+  try { return parsePatch(JSON.parse(content)) } catch { return undefined }
+}
+
+function renderBlock(rows) {
+  validatePatch([{ insert: rows }])
+  return `${blockStart}\n${stringify([{ insert: rows }]).trimEnd()}\n${blockEnd}`
+}
+
+function writeManagedRows(content, rows) {
+  const marked = markedRows(content)
+  const block = renderBlock(rows)
+  if (marked) return `${content.slice(0, marked.start)}${block}${content.slice(marked.end)}`
+  const legacy = legacyPatch(content)
+  if (legacy) return `${JSON.stringify([{ insert: [...legacy.preserved, ...rows] }], null, 2)}\n`
+  if (/^[ \t]*\[\][ \t]*$/m.test(content)) return content.replace(/^[ \t]*\[\][ \t]*$/m, block)
+  return `${content.trimEnd()}\n\n${block}\n`
+}
+
 /** A store uses an exclusive cross-process lock and atomically replaces its patch. */
 export class ExtensionStore {
   constructor(path) {
@@ -71,7 +104,8 @@ export class ExtensionStore {
   }
 
   async read() {
-    return validatePatch(JSON.parse(await readFile(this.path, 'utf8')))
+    const content = await readFile(this.path, 'utf8')
+    return markedRows(content)?.rows ?? legacyPatch(content)?.managed ?? []
   }
 
   async update(change, signal, expectedRevision) {
@@ -81,19 +115,18 @@ export class ExtensionStore {
     const temp = `${this.path}.${randomUUID()}.tmp`
     let tempExists = false
     try {
-      const parsed = parsePatch(JSON.parse(await readFile(this.path, 'utf8')))
-      const rows = parsed.managed
+      const content = await readFile(this.path, 'utf8')
+      const rows = markedRows(content)?.rows ?? legacyPatch(content)?.managed ?? []
       if (expectedRevision !== undefined && revisionOf(rows) !== expectedRevision) {
         throw Object.assign(new Error('Configuration changed. Refresh before saving.'), { code: 'CONFLICT' })
       }
       await change(rows)
-      const document = [{ insert: [...parsed.preserved, ...rows] }]
-      validatePatch(document)
+      const document = writeManagedRows(content, rows)
       signal?.throwIfAborted()
       const file = await open(temp, 'wx', 0o600)
       tempExists = true
       try {
-        await file.writeFile(`${JSON.stringify(document, null, 2)}\n`)
+        await file.writeFile(document)
         await file.sync()
       } finally { await file.close() }
       signal?.throwIfAborted()
@@ -110,7 +143,7 @@ export class ExtensionStore {
     validateId(id)
     const normalizedDirectory = normalizeWindowsPath(directory)
     if (!isAbsolute(normalizedDirectory) || !(await stat(normalizedDirectory)).isDirectory()) throw new Error('Skill root must be an existing absolute directory containing skill bundles.')
-    return this.add({ id, name: modules.skill, disabled: true, config: {
+    return this.add({ id, name: moduleNames.skill, disabled: true, config: {
       providerName: `managed-${id}`, includeDefaultRoots: false, customSkillDirs: [normalizedDirectory],
     } }, signal, expectedRevision)
   }
@@ -126,7 +159,7 @@ export class ExtensionStore {
       let id = stem
       for (let suffix = 2; rows.some(row => row.id === id); suffix++) id = `${stem.slice(0, 27)}-${suffix}`
       const normalizedGroup = typeof group === 'string' ? group.trim().slice(0, 64) : ''
-      rows.push({ id, name: modules.skill, disabled: true, config: {
+      rows.push({ id, name: moduleNames.skill, disabled: true, config: {
         providerName: `managed-${id}`, includeDefaultRoots: false, customSkillDirs: [normalizedDirectory],
         ...(normalizedGroup ? { [groupField]: normalizedGroup } : {}),
       } })
@@ -157,7 +190,7 @@ export class ExtensionStore {
       const url = new URL(config.url)
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('Use an HTTP(S) endpoint without credentials, query or fragment.')
     } else if (!config.command.trim()) throw new Error('MCP command cannot be empty.')
-    return this.add({ id, name: modules.mcp, disabled: true, config }, signal, expectedRevision)
+    return this.add({ id, name: moduleNames.mcp, disabled: true, config }, signal, expectedRevision)
   }
 
   async add(row, signal, expectedRevision) {

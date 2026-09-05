@@ -82,12 +82,29 @@ test('writes preserve the manager registration in a live profile patch', async t
   assert.equal((await store.read())[0].id, 'demo')
 })
 
+test('writes a managed YAML block without changing other profile content', async t => {
+  const { directory, path, store } = await fixture(t)
+  const original = '# Your patch\n- insert:\n    - id: unrelated\n      name: example-plugin\n      config:\n        value: !!js ctx.example\n'
+  await writeFile(path, original)
+  await store.addSkill('notes', directory)
+  const written = await readFile(path, 'utf8')
+  assert.equal(written.startsWith(original.trimEnd()), true)
+  assert.match(written, /# dsh-skill-mcp:managed-start/)
+  assert.match(written, /name: ["']@deepseek-ai\/dsh-skill-filesystem["']/)
+  await store.setEnabled('notes', true)
+  const updated = await readFile(path, 'utf8')
+  assert.equal(updated.match(/dsh-skill-mcp:managed-start/g).length, 1)
+  assert.match(updated, /disabled: false/)
+  assert.match(updated, /value: !!js ctx\.example/)
+})
+
 test('cancellation and corrupted persisted state never overwrite the patch', async t => {
   const { path, store } = await fixture(t)
   await assert.rejects(store.addMcp('demo', { transport: 'stdio', command: 'node' }, AbortSignal.abort()))
-  await writeFile(path, '[{"remove":["unrelated"]}]')
+  const corrupted = '# dsh-skill-mcp:managed-start\n- insert: nope\n# dsh-skill-mcp:managed-end\n'
+  await writeFile(path, corrupted)
   await assert.rejects(store.setEnabled('demo', true), /managed insert/)
-  assert.equal(await readFile(path, 'utf8'), '[{"remove":["unrelated"]}]')
+  assert.equal(await readFile(path, 'utf8'), corrupted)
 })
 
 test('real Cordis tool dispatch persists configuration and unregisters on disposal', async t => {

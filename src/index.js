@@ -1,12 +1,14 @@
 /** Skill and MCP configuration tools for a profile-owned managed patch. */
 import Schema from '@deepseek-ai/schemastery'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { ExtensionStore } from './store.js'
 import { createWebHandler } from './web.js'
 
 export const name = 'extension-manager'
 export const inject = ['tools', 'skills']
-export const Config = Schema.object({ patchPath: Schema.string().required() })
+export const Config = Schema.object({ patchPath: Schema.string().default('') })
 
 const string = { type: 'string', required: true }
 const output = {
@@ -16,7 +18,8 @@ const output = {
 
 /** Register management operations. MCP processes are started only by the profile loader. */
 export async function apply(ctx, config) {
-  const store = new ExtensionStore(config.patchPath)
+  const home = process.env.DSH_HOME || join(homedir(), '.dsh')
+  const store = new ExtensionStore(config.patchPath || join(home, 'profiles', 'web', 'cordis.patch.yml'))
   await store.read()
   ctx.inject(['connection'], web => {
     web.connection.rpc.handle('/extensions', createWebHandler(store, ctx))

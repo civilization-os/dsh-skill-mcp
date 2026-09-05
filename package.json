@@ -1,13 +1,25 @@
 {
-  "name": "deepseek-harness-plugins",
-  "private": true,
+  "name": "dsh-skill-mcp",
+  "version": "0.1.0",
+  "description": "Skill path and MCP server management for DeepSeek Harness Web",
+  "license": "Apache-2.0",
   "type": "module",
   "exports": {
     ".": "./src/index.js",
     "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
+  "files": [
+    "src",
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
   "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "platform": "web",
       "inject": [
@@ -25,16 +37,19 @@
     "node": ">=22.19.0"
   },
   "dependencies": {
-    "@deepseek-ai/cordis": "link:../deepseek-harness/vendor/cordis",
-    "@deepseek-ai/dsh-mcp-client": "link:../deepseek-harness/packages/mcp/mcp-client",
-    "@deepseek-ai/dsh-skill": "link:../deepseek-harness/packages/skill/skill",
-    "@deepseek-ai/dsh-skill-filesystem": "link:../deepseek-harness/packages/skill/skill-filesystem",
-    "@deepseek-ai/dsh-system-prompt": "link:../deepseek-harness/packages/core/system-prompt",
-    "@deepseek-ai/dsh-tools": "link:../deepseek-harness/packages/core/tools",
-    "@deepseek-ai/schemastery": "link:../deepseek-harness/vendor/schemastery",
+    "@deepseek-ai/dsh-mcp-client": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-skill-filesystem": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-tools": "0.1.2-rc.1",
+    "@deepseek-ai/schemastery": "3.18.2",
     "yaml": "^2.9.0"
   },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.2"
+  },
   "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-skill": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-system-prompt": "0.1.2-rc.1",
     "@modelcontextprotocol/sdk": "1.29.0",
     "esbuild": "^0.28.2",
     "react": "^19.2.8",

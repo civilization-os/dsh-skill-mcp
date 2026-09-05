@@ -1,84 +1,137 @@
-# DeepSeek Harness Plugins
+# dsh-skill-mcp
 
-独立维护的 Harness 插件仓库。当前提供 Skill / MCP 扩展管理工具：模型侧 `extensions_*` 工具 + 宿主 `/extensions` RPC 通道，并在 Harness Web GUI 的 Settings 注册「Skill 管理」与「MCP 管理」两个配置分区；扩展记录通过 Harness 已有 provider 加载。
+为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web 界面提供 Skill 路径和 MCP 服务器管理。
 
-## 开发环境
+安装后，“设置”中会出现 **Skill 管理** 和 **MCP 管理** 两个页面，同时向 Agent 注册 `extensions_*` 管理工具。插件使用 Harness 自带的 Skill filesystem provider 与 MCP client，配置写入当前 `web` profile 的 `cordis.patch.yml`。
 
-需要 Node.js 22.19+ 和 pnpm。当前使用相邻 `../deepseek-harness` 的已构建包作为本地开发依赖，已在 Harness `0.1.3-alpha.1` 上验证。独立 Git 历史和 lockfile 属于本仓库；发布前需将本地 `link:` 依赖替换成兼容的发布版本。
+## 通过 dsh 安装
 
-```powershell
-cd D:/project/deepseek-harness-plugins
+需要已安装 DeepSeek Harness、Node.js 22.19+ 和 pnpm。把插件安装到 `web` profile：
+
+```sh
+dsh plugin --profile web add github:civilization-os/dsh-skill-mcp
+```
+
+Git 安装可以锁定到具体 commit，避免以后安装到未经确认的新版本：
+
+```sh
+dsh plugin --profile web add github:civilization-os/dsh-skill-mcp#<commit-sha>
+```
+
+安装完成后重启 Web profile：
+
+```sh
+dsh --profile web
+```
+
+如果从 DeepSeek Harness 源码仓库运行 CLI，请把上面的 `dsh` 换成 `pnpm dsh`，并在 Harness 仓库根目录执行，例如：
+
+```sh
+pnpm dsh plugin --profile web add github:civilization-os/dsh-skill-mcp
+pnpm dsh --profile web
+```
+
+更新或卸载：
+
+```sh
+dsh plugin --profile web update dsh-skill-mcp
+dsh plugin --profile web remove dsh-skill-mcp
+```
+
+Bundle 的新增、更新和移除都需要重启正在运行的 Web profile。Skill 与 MCP 配置保存在用户自己的 profile patch 中；卸载插件不会自动删除这些配置行。
+
+## Skill 管理
+
+用户只需指定一个本地 Skill 路径。一个路径下面可以放多个 Skill，也可以配置多个路径：
+
+```text
+skills/
+├── code-review/
+│   ├── SKILL.md
+│   └── references/
+└── release-notes/
+    ├── SKILL.md
+    └── scripts/
+```
+
+Skill 页面支持：
+
+- 添加、启用和禁用多个 Skill 路径
+- 按路径或用户自定义分组展示
+- 搜索、数量统计、frontmatter 格式诊断和同名覆盖提示
+- 查看 `scripts`、`references`、`assets` 等资源文件
+- 控制模型自动选择和用户 `/name` 调用
+- 创建只有 `SKILL.md` 的最小目录，或包含标准资源目录的 Skill
+
+新路径默认禁用。启用后，Harness 的 Skill provider 扫描该路径中的技能。页面在前台时每 3 秒刷新一次。
+
+## MCP 管理
+
+支持两种 MCP 配置类型：
+
+- `stdio`：执行本地命令并通过标准输入输出通信
+- `HTTP`：连接 Streamable HTTP MCP 地址
+
+stdio 示例：
+
+```json
+{
+  "transport": "stdio",
+  "command": "node",
+  "args": ["D:/servers/example/server.js"],
+  "cwd": "D:/servers/example"
+}
+```
+
+HTTP 示例：
+
+```json
+{
+  "transport": "streamable-http",
+  "url": "http://127.0.0.1:9000/mcp"
+}
+```
+
+服务器卡片使用状态灯显示禁用、等待发现工具或工具可用，并可展开查看实际注册的工具列表。新服务器默认禁用；启用 stdio 服务器会在 Agent 沙箱之外执行所配置的程序。
+
+当前版本不接受 `env`、认证 header、带凭据或 token 查询参数的 URL。请勿把密钥放进工具参数、MCP 地址或提交到仓库。
+
+## Agent 工具
+
+| 工具 | 作用 |
+|---|---|
+| `extensions_list` | 查看受管 Skill 路径与 MCP 配置 |
+| `extensions_add_skill` | 添加 Skill 路径；Agent 调用时显式指定内部 id |
+| `extensions_add_mcp` | 添加 stdio 或 HTTP MCP 配置 |
+| `extensions_set_enabled` | 启用或禁用受管配置 |
+| `extensions_inspect` | 查看当前 Agent 实际可见的 Skill 与 MCP 工具 |
+
+可以直接告诉 Agent：
+
+> 添加 Skill 路径 `D:/my-skills`，内部 id 使用 `my-skills`，启用后检查发现的技能。
+
+## 本地开发
+
+```sh
+git clone git@github.com:civilization-os/dsh-skill-mcp.git
+cd dsh-skill-mcp
 pnpm install
-pnpm run web
+pnpm run build
 pnpm test
 ```
 
-`pnpm run web` 会构建浏览器包、创建独立的 `.local/harness-home`，并在 `http://127.0.0.1:3081` 启动 Harness。终端会打印带一次性登录参数的地址；打开它后，在“设置”中可以看到“Skill 管理”和“MCP 管理”。本地配置不会提交到 Git。
+`pnpm run build` 生成并提交 `lib/client.js`。仓库携带该浏览器产物，因此通过 GitHub 安装时无需执行安装期构建脚本或配置 pnpm `allowBuilds`。
 
-## 加载到 Harness
+如果本机旁边有一份 `../deepseek-harness` 源码 checkout，可以运行独立开发 profile：
 
-日常使用直接在本插件仓库运行：
-
-```powershell
+```sh
 pnpm run web
 ```
 
-可在命令后附加 Harness Web 参数，例如 `pnpm run web -- --port 3090`。模型调用仍使用这个独立 profile 中配置的模型凭据。管理插件依赖 `tools`、`skills` 和 `connection` 服务。
+它会使用 `.local/harness-home`，默认监听 `http://127.0.0.1:3081`，不会修改正式 Harness home。
 
-## Web 设置页
+## 验证
 
-`src/client` 按官方 `settings.section` 模式注册 Settings 里的两个分区——「Skill 管理」（id `skill-manager`）与「MCP 管理」（id `mcp-manager`），各自一个页面（`ctx.slots.inject('settings.section', …)`，inject `slots`/`locale`/`connection`），共享同一个数据控制器与 managed patch。管理器允许 live profile patch 在同一个 `insert` 中保留 `extension-manager` 自身的注册行；写入只修改 Skill/MCP 行。经 `scripts/build.js` 打包为 `lib/client.js`。该产物不入 Git（见 `.gitignore`），改动 `src/client` 后需先运行 `pnpm run build`。浏览器模块 id 是包名 `deepseek-harness-plugins`，由 `package.json` 的 `dsh.client` 元数据与 `exports["./client"]` 决定。
+自动测试覆盖配置持久化、Skill 多路径与用户分组、并发 revision、Skill 创建与调用权限、MCP 工具发现和卸载、轮询状态以及中英文词典一致性。测试不需要模型 API key。
 
-Harness 会扫描插件的 `package.json`，把 `./client` bundle 纳入浏览器模块表，无需改动 Harness。管理数据保存在独立 profile 自己的 `.local/harness-home/profiles/web/cordis.patch.yml` 中，因此 Web profile 会实时加载设置页写入的变化。管理插件本身由 `.local/manager.patch.json` 加载：
-
-```yaml
-- insert:
-    - id: extension-manager
-      name: 'file:///D:/project/deepseek-harness-plugins/src/index.js'
-      config:
-        patchPath: 'D:/project/deepseek-harness-plugins/.local/harness-home/profiles/web/cordis.patch.yml'
-```
-
-该行同时挂载模型工具与经过 Harness 浏览器鉴权的 `/extensions` RPC。`pnpm run setup` 可单独创建这些本地文件，并保留已管理的扩展记录。
-
-## 工具
-
-| 工具 | 参数 | 作用 |
-|---|---|---|
-| `extensions_list` | 无 | 查看本插件管理的来源及配置启用状态 |
-| `extensions_add_skill` | `id`, `directory` | 添加已有 Skill 路径，目录内放各技能子目录及其 `SKILL.md`；模型工具保留显式内部 id |
-| `extensions_add_mcp` | `id`, `configuration` | 添加 MCP；configuration 是 JSON 字符串 |
-| `extensions_set_enabled` | `id`, `enabled` | 保存启用或禁用状态 |
-| `extensions_inspect` | `cwd` | 查询当前调用者实际可见的技能目录和 MCP 工具名 |
-
-新来源默认禁用。添加只校验配置，不执行 MCP 命令；启用 MCP 会让 profile 启动其命令或连接其端点。需要明确选择启用的来源。参数和结果会进入会话日志，不能包含密钥、带令牌的 URL 或命令行凭据。
-
-MCP 配置类型在界面中显示为 `stdio` 和 `HTTP`；底层 HTTP transport 使用 Harness 的 `streamable-http` 配置值。Windows 盘符路径会折叠重复转义的反斜杠。MCP configuration 示例：
-
-```json
-{"transport":"stdio","command":"node","args":["D:/servers/example/server.js"],"cwd":"D:/servers/example"}
-```
-
-```json
-{"transport":"streamable-http","url":"http://127.0.0.1:9000/mcp"}
-```
-
-`web` 的 live patch reload 会应用文件修改；startup 类型 profile 必须重启。写入结果中的 `pending-profile-reload` 只证明配置已保存。用 `extensions_inspect` 查看实际发现的内容；没有 MCP 工具也可能是服务器没有提供工具，不能据此断言连接失败。MCP 连接错误由 Harness 客户端日志报告。
-
-可向模型说：“添加 Skill 根目录 D:/my-skills，id 为 notes，然后启用并检查。”
-
-## 数据与生命周期
-
-管理文件本身就是 JSON 格式的 Cordis patch，没有额外数据库或派生配置。写入使用排他锁和同目录临时文件替换；有其他写入者时操作失败，调用者可重试。进程异常退出遗留 `.lock` 时，确认没有写入者后手动移除锁文件。不要手工修改模块路径或同时让其他工具编辑该文件。
-
-管理工具注册由 Cordis 卸载；Skill 文件扫描和 MCP 连接、重连、工具撤销由 Harness 已有插件负责。来源开关撤销或恢复整个来源；单个 Skill 的调用权限直接更新其 frontmatter，并用文件内容 revision 拒绝覆盖并发编辑。新建 Skill 先写入同来源内的临时目录，再原子改名为最终目录。已进入会话历史的 Skill 内容不会被删除。
-
-## 当前范围
-
-Settings 里的「Skill 管理」「MCP 管理」共享同一份 managed patch 和 `/extensions` RPC。两个页面在前台时每 3 秒静默刷新，标签页重新进入前台时立即刷新；状态变化不会触发整页加载提示。MCP 卡片用状态灯区分禁用、等待发现工具和工具可用，并可展开查看该服务器实际注册的工具名。状态来自宿主工具注册表，不等同于独立连接探测。
-
-Skill 页面允许配置多个路径，每个路径下面包含多个技能。添加路径时只需填写本地目录，可选填写用户分组；内部 id 根据目录名自动生成。列表可以按路径展示，也可以把多个路径按用户分组汇总。页面扫描每个路径的直接子项，支持 `<name>/SKILL.md` bundle 和根目录 `<name>.md`，提供搜索、统计、frontmatter 诊断、适用场景、资源文件清单、模型调用与 `/name` 用户调用开关，以及 minimal/standard 两种新建目录模板。诊断与同名提示覆盖受管路径；其他 provider 的隐藏候选和日志级 watcher 健康信息不在当前 RPC 中。资源清单最多递归三层和 100 个文件，不读取资源正文。该插件不从网络下载安装 Skill，也不编辑正文。
-
-尚未集成 MCP OAuth 或凭据引用，因此不接受 `env` 和 `headers`。Skill 来源添加阶段验证根目录存在；启用后的正式解析和 catalog 发布仍由 Harness Skill provider 完成。
-
-19 项自动测试覆盖配置持久化、Skill 多路径与用户分组、拒绝无效写入、锁冲突、取消、实时 profile 中管理器注册的保留、真实 Cordis 工具调用、Skill provider 加载、Skill 清单诊断/创建/权限更新、真实本地 HTTP MCP 的工具发现/调用/卸载，以及设置写冲突、静默轮询、凭据不外泄、双语词典一致；不需要模型 API key。真实 GUI 验收覆盖 Skill 有效与异常状态、详情资源、新建标准目录、调用权限切换，以及 MCP 启停和实际工具发现。
+许可证：[Apache-2.0](LICENSE)。
