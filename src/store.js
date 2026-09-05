@@ -1,6 +1,6 @@
 /** Owns one JSON-formatted Cordis patch containing managed extensions. */
 import { open, readFile, rename, unlink, stat } from 'node:fs/promises'
-import { isAbsolute, win32 } from 'node:path'
+import { basename, isAbsolute, win32 } from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
 import { Config as McpConfig } from '@deepseek-ai/dsh-mcp-client'
 import { Config as SkillConfig } from '@deepseek-ai/dsh-skill-filesystem'
@@ -12,6 +12,7 @@ const modules = {
 const managerModule = new URL('./index.js', import.meta.url).href
 const isModule = (value, kind) => [modules[kind], new URL('../src/index.ts', modules[kind]).href, new URL('../lib/index.js', modules[kind]).href].includes(value)
 const idPattern = /^[A-Za-z0-9_-]{1,32}$/
+const groupField = 'extensionManagerGroup'
 
 function normalizeWindowsPath(value) {
   const trimmed = value.trim()
@@ -112,6 +113,34 @@ export class ExtensionStore {
     return this.add({ id, name: modules.skill, disabled: true, config: {
       providerName: `managed-${id}`, includeDefaultRoots: false, customSkillDirs: [normalizedDirectory],
     } }, signal, expectedRevision)
+  }
+
+  async addSkillPath(directory, group, signal, expectedRevision) {
+    const normalizedDirectory = normalizeWindowsPath(directory)
+    if (!isAbsolute(normalizedDirectory) || !(await stat(normalizedDirectory)).isDirectory()) throw new Error('Skill root must be an existing absolute directory containing skill bundles.')
+    return this.update(rows => {
+      if (rows.some(row => !row.config.serverName && win32.normalize(row.config.customSkillDirs[0]).toLowerCase() === normalizedDirectory.toLowerCase())) {
+        throw new Error('Skill path already exists.')
+      }
+      const stem = basename(normalizedDirectory).replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'skills'
+      let id = stem
+      for (let suffix = 2; rows.some(row => row.id === id); suffix++) id = `${stem.slice(0, 27)}-${suffix}`
+      const normalizedGroup = typeof group === 'string' ? group.trim().slice(0, 64) : ''
+      rows.push({ id, name: modules.skill, disabled: true, config: {
+        providerName: `managed-${id}`, includeDefaultRoots: false, customSkillDirs: [normalizedDirectory],
+        ...(normalizedGroup ? { [groupField]: normalizedGroup } : {}),
+      } })
+    }, signal, expectedRevision)
+  }
+
+  async setSkillGroup(id, group, signal, expectedRevision) {
+    return this.update(rows => {
+      const row = rows.find(row => row.id === id && !row.config.serverName)
+      if (!row) throw new Error('Unknown Skill path.')
+      const normalized = group.trim().slice(0, 64)
+      if (normalized) row.config[groupField] = normalized
+      else delete row.config[groupField]
+    }, signal, expectedRevision)
   }
 
   async addMcp(id, input, signal, expectedRevision) {

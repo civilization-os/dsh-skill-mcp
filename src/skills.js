@@ -104,6 +104,7 @@ async function inspectSkill(source, path, format) {
 export async function inspectSkills(rows) {
   const sources = rows.filter(row => !row.config.serverName).map(row => ({
     id: row.id, enabled: !row.disabled, location: row.config.customSkillDirs[0],
+    group: typeof row.config.extensionManagerGroup === 'string' ? row.config.extensionManagerGroup : '',
   }))
   const skills = []
   for (const source of sources) {

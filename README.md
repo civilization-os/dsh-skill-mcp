@@ -46,7 +46,7 @@ Harness 会扫描插件的 `package.json`，把 `./client` bundle 纳入浏览�
 | 工具 | 参数 | 作用 |
 |---|---|---|
 | `extensions_list` | 无 | 查看本插件管理的来源及配置启用状态 |
-| `extensions_add_skill` | `id`, `directory` | 添加已有 Skill 根目录，目录内放各技能子目录及其 `SKILL.md` |
+| `extensions_add_skill` | `id`, `directory` | 添加已有 Skill 路径，目录内放各技能子目录及其 `SKILL.md`；模型工具保留显式内部 id |
 | `extensions_add_mcp` | `id`, `configuration` | 添加 MCP；configuration 是 JSON 字符串 |
 | `extensions_set_enabled` | `id`, `enabled` | 保存启用或禁用状态 |
 | `extensions_inspect` | `cwd` | 查询当前调用者实际可见的技能目录和 MCP 工具名 |
@@ -77,8 +77,8 @@ MCP 配置类型在界面中显示为 `stdio` 和 `HTTP`；底层 HTTP transport
 
 Settings 里的「Skill 管理」「MCP 管理」共享同一份 managed patch 和 `/extensions` RPC。两个页面在前台时每 3 秒静默刷新，标签页重新进入前台时立即刷新；状态变化不会触发整页加载提示。MCP 卡片用状态灯区分禁用、等待发现工具和工具可用，并可展开查看该服务器实际注册的工具名。状态来自宿主工具注册表，不等同于独立连接探测。
 
-Skill 页面扫描每个受管来源的直接子项，支持 `<name>/SKILL.md` bundle 和根目录 `<name>.md`，提供搜索、统计、frontmatter 诊断、适用场景、资源文件清单、模型调用与 `/name` 用户调用开关，以及 minimal/standard 两种新建目录模板。诊断与同名提示覆盖受管来源；其他 provider 的隐藏候选和日志级 watcher 健康信息不在当前 RPC 中。资源清单最多递归三层和 100 个文件，不读取资源正文。该插件不从网络下载安装 Skill，也不编辑正文。
+Skill 页面允许配置多个路径，每个路径下面包含多个技能。添加路径时只需填写本地目录，可选填写用户分组；内部 id 根据目录名自动生成。列表可以按路径展示，也可以把多个路径按用户分组汇总。页面扫描每个路径的直接子项，支持 `<name>/SKILL.md` bundle 和根目录 `<name>.md`，提供搜索、统计、frontmatter 诊断、适用场景、资源文件清单、模型调用与 `/name` 用户调用开关，以及 minimal/standard 两种新建目录模板。诊断与同名提示覆盖受管路径；其他 provider 的隐藏候选和日志级 watcher 健康信息不在当前 RPC 中。资源清单最多递归三层和 100 个文件，不读取资源正文。该插件不从网络下载安装 Skill，也不编辑正文。
 
 尚未集成 MCP OAuth 或凭据引用，因此不接受 `env` 和 `headers`。Skill 来源添加阶段验证根目录存在；启用后的正式解析和 catalog 发布仍由 Harness Skill provider 完成。
 
-18 项自动测试覆盖配置持久化、拒绝无效写入、锁冲突、取消、实时 profile 中管理器注册的保留、真实 Cordis 工具调用、Skill provider 加载、Skill 清单诊断/创建/权限更新、真实本地 HTTP MCP 的工具发现/调用/卸载，以及设置写冲突、静默轮询、凭据不外泄、双语词典一致；不需要模型 API key。真实 GUI 验收覆盖 Skill 有效与异常状态、详情资源、新建标准目录、调用权限切换，以及 MCP 启停和实际工具发现。
+19 项自动测试覆盖配置持久化、Skill 多路径与用户分组、拒绝无效写入、锁冲突、取消、实时 profile 中管理器注册的保留、真实 Cordis 工具调用、Skill provider 加载、Skill 清单诊断/创建/权限更新、真实本地 HTTP MCP 的工具发现/调用/卸载，以及设置写冲突、静默轮询、凭据不外泄、双语词典一致；不需要模型 API key。真实 GUI 验收覆盖 Skill 有效与异常状态、详情资源、新建标准目录、调用权限切换，以及 MCP 启停和实际工具发现。
