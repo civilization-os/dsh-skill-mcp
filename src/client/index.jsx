@@ -6,6 +6,7 @@ import css from './styles.css'
 
 export const inject = ['slots', 'locale', 'connection']
 const namespace = 'settings.extension-manager'
+const mcpPollIntervalMs = 3000
 
 export function apply(ctx) {
   const controller = new ExtensionsController((endpoint, args, signal) => ctx.connection.rpc.call('/extensions', endpoint, args, signal))
@@ -19,7 +20,7 @@ export function apply(ctx) {
   })
   ctx.on('connection/reset', () => { void controller.request('list') })
   const t = ctx.locale.bind(namespace)
-  const face = { hooks: { manager: controller }, request: (endpoint, args) => controller.request(endpoint, args) }
+  const face = { hooks: { manager: controller }, request: (endpoint, args, options) => controller.request(endpoint, args, options) }
   // The two sections share one controller and managed patch; each kind gets its own settings page.
   const section = (id, kind) => ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section', id, order: kind === 'skill' ? 16 : 17,
@@ -38,7 +39,24 @@ function ManagerSection({ kind, t, useManager, request }) {
   const [form, setForm] = useState(null)
   const busy = state.loading || state.saving
   const rows = state.extensions.filter(row => row.kind === kind)
-  useEffect(() => { void request('list') }, [request])
+  useEffect(() => {
+    void request('list')
+    if (kind !== 'mcp') return
+    let timer
+    const poll = () => {
+      if (document.visibilityState === 'visible') void request('list', {}, { silent: true })
+      timer = window.setTimeout(poll, mcpPollIntervalMs)
+    }
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') void request('list', {}, { silent: true })
+    }
+    timer = window.setTimeout(poll, mcpPollIntervalMs)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+    return () => {
+      window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+    }
+  }, [kind, request])
   return <section className="dsh-ext">
     <header className="dsh-ext-heading"><div><h2>{t(kind === 'skill' ? 'navSkill' : 'navMcp')}</h2><p>{t(kind === 'skill' ? 'skillIntro' : 'mcpIntro')}</p></div>
       <button type="button" disabled={busy} onClick={() => request('list')}>{t('refresh')}</button></header>

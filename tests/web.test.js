@@ -64,6 +64,18 @@ test('a slower refresh cannot replace the result of a later save', async () => {
   controller.dispose()
 })
 
+test('silent polling updates runtime data without showing a loading state', async () => {
+  let resolve
+  const controller = new ExtensionsController(() => new Promise(done => { resolve = done }))
+  const pending = controller.request('list', {}, { silent: true })
+  assert.equal(controller.state.loading, false)
+  resolve({ ok: true, value: { revision: 'polled', extensions: [{ id: 'demo', tools: ['mcp__demo__ping'] }] } })
+  assert.equal(await pending, true)
+  assert.equal(controller.state.revision, 'polled')
+  assert.equal(controller.state.loading, false)
+  controller.dispose()
+})
+
 test('disposed controllers suppress late completions and subscriptions', async () => {
   let resolve
   const controller = new ExtensionsController(() => new Promise(done => { resolve = done }))
