@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ExtensionStore } from '../src/store.js'
@@ -48,6 +48,36 @@ test('MCP view reports observed tools independently of configured enabled state'
   const { value } = await call('list', {})
   assert.equal(value.extensions[0].enabled, false)
   assert.deepEqual(value.extensions[0].tools, ['mcp__demo__alpha', 'mcp__demo__ping'])
+})
+
+test('Skill inventory diagnoses files and authoring updates invocation flags', async t => {
+  const { call, store, directory } = await fixture(t)
+  const root = join(directory, 'skills')
+  await mkdir(join(root, 'existing', 'references'), { recursive: true })
+  await writeFile(join(root, 'existing', 'SKILL.md'), '---\nname: existing\ndescription: Existing skill\nuser-invocable: false\n---\n\n# Existing\n')
+  await writeFile(join(root, 'existing', 'references', 'guide.md'), '# Guide\n')
+  await writeFile(join(root, 'broken.md'), '# Missing frontmatter\n')
+  await store.addSkill('library', root)
+  await store.setEnabled('library', true)
+  const listed = await call('list', {})
+  assert.equal(listed.value.sources[0].id, 'library')
+  assert.equal(listed.value.skills.find(skill => skill.name === 'existing').userInvocable, false)
+  assert.deepEqual(listed.value.skills.find(skill => skill.name === 'existing').resources, ['references/guide.md'])
+  assert.deepEqual(listed.value.skills.find(skill => skill.name === 'broken').issues, ['missing-frontmatter'])
+
+  const created = await call('create-skill', {
+    sourceId: 'library', name: 'new-skill', description: 'A new skill', whenToUse: 'Use for tests.',
+    modelInvocable: true, userInvocable: true, structure: 'standard', revision: listed.value.revision,
+  })
+  assert.equal(created.ok, true)
+  assert.equal((await stat(join(root, 'new-skill', 'scripts'))).isDirectory(), true)
+  const skill = created.value.skills.find(item => item.name === 'new-skill')
+  const changed = await call('set-skill-invocation', {
+    sourceId: 'library', relativePath: skill.relativePath, skillRevision: skill.revision,
+    modelInvocable: false, userInvocable: true, revision: created.value.revision,
+  })
+  assert.equal(changed.value.skills.find(item => item.name === 'new-skill').modelInvocable, false)
+  assert.match(await readFile(join(root, 'new-skill', 'SKILL.md'), 'utf8'), /disable-model-invocation: true/)
 })
 
 test('a slower refresh cannot replace the result of a later save', async () => {

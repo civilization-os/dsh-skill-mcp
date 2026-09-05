@@ -6,7 +6,7 @@ import css from './styles.css'
 
 export const inject = ['slots', 'locale', 'connection']
 const namespace = 'settings.extension-manager'
-const mcpPollIntervalMs = 3000
+const settingsPollIntervalMs = 3000
 
 export function apply(ctx) {
   const controller = new ExtensionsController((endpoint, args, signal) => ctx.connection.rpc.call('/extensions', endpoint, args, signal))
@@ -31,52 +31,134 @@ export function apply(ctx) {
   section('mcp-manager', 'mcp')
 }
 
-export function SkillSection(props) { return <ManagerSection {...props} kind="skill" /> }
-export function McpSection(props) { return <ManagerSection {...props} kind="mcp" /> }
-
-function ManagerSection({ kind, t, useManager, request }) {
+export function SkillSection({ t, useManager, request }) {
   const state = useManager(value => value)
-  const [form, setForm] = useState(null)
+  const [form, setForm] = useState('')
+  const [query, setQuery] = useState('')
   const busy = state.loading || state.saving
-  const rows = state.extensions.filter(row => row.kind === kind)
+  const sources = state.sources ?? []
+  const skills = state.skills ?? []
+  const visible = skills.filter(skill => `${skill.name} ${skill.description} ${skill.sourceId}`.toLowerCase().includes(query.toLowerCase()))
+  const counts = {
+    all: skills.length,
+    automatic: skills.filter(skill => skill.valid && skill.modelInvocable && skill.sourceEnabled && !skill.shadowed).length,
+    manual: skills.filter(skill => skill.valid && !skill.modelInvocable && skill.userInvocable && skill.sourceEnabled).length,
+    invalid: skills.filter(skill => !skill.valid).length,
+  }
+  useLiveRefresh(request)
+  return <section className="dsh-ext dsh-skill-manager">
+    <header className="dsh-ext-heading"><div><h2>{t('navSkill')}</h2><p>{t('skillIntro')}</p></div>
+      <div className="dsh-ext-heading-actions"><button type="button" disabled={busy || !state.revision} onClick={() => setForm('source')}>{t('add')}</button>
+        <button type="button" disabled={busy || sources.length === 0} onClick={() => setForm('skill')}>{t('newSkill')}</button>
+        <button type="button" disabled={busy} onClick={() => request('list')}>{t('refresh')}</button></div></header>
+    <PageState state={state} t={t} />
+    <div className="dsh-skill-stats">
+      {Object.entries(counts).map(([key, value]) => <div key={key}><strong>{value}</strong><span>{t(`stat_${key}`)}</span></div>)}
+    </div>
+    <label className="dsh-skill-search"><span className="dsh-visually-hidden">{t('search')}</span>
+      <input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder={t('searchPlaceholder')} /></label>
+    {form === 'source' && <AddForm kind="skill" t={t} busy={busy} onCancel={() => setForm('')} onSave={async args => {
+      if (await request('add-skill', args)) setForm('')
+    }} />}
+    {form === 'skill' && <NewSkillForm sources={sources} t={t} busy={busy} onCancel={() => setForm('')} onSave={async args => {
+      if (await request('create-skill', args)) setForm('')
+    }} />}
+    {sources.length === 0 && <div className="dsh-ext-card dsh-ext-empty"><strong>{t('emptySkills')}</strong><p>{t('emptySkillsHint')}</p></div>}
+    <div className="dsh-skill-sources">{sources.map(source => {
+      const rows = visible.filter(skill => skill.sourceId === source.id)
+      if (query && rows.length === 0) return null
+      return <section className="dsh-skill-source" key={source.id}>
+        <header><div className="dsh-skill-source-title"><span className={`dsh-ext-status ${source.enabled ? 'dsh-ext-status-available' : ''}`} aria-hidden="true" />
+          <div><h3>{source.id} <span className="dsh-ext-count">{skills.filter(skill => skill.sourceId === source.id).length}</span></h3><code>{source.location}</code></div></div>
+          <button type="button" role="switch" aria-checked={source.enabled} disabled={busy}
+            onClick={() => request('enable', { id: source.id, enabled: !source.enabled })}>{t(source.enabled ? 'disable' : 'enable')}</button></header>
+        {source.issue && <p className="dsh-ext-notice">{t(`issue_${source.issue}`)}</p>}
+        {rows.length === 0 ? <div className="dsh-ext-empty"><p>{t('sourceEmpty')}</p></div>
+          : <ul>{rows.map(skill => <SkillRow key={skill.relativePath} skill={skill} t={t} busy={busy} request={request} />)}</ul>}
+      </section>
+    })}</div>
+    <p className="dsh-ext-footnote">{t('skillFootnote')}</p>
+  </section>
+}
+
+export function McpSection({ t, useManager, request }) {
+  const state = useManager(value => value)
+  const [form, setForm] = useState(false)
+  const busy = state.loading || state.saving
+  const rows = state.extensions.filter(row => row.kind === 'mcp')
+  useLiveRefresh(request)
+  return <section className="dsh-ext">
+    <header className="dsh-ext-heading"><div><h2>{t('navMcp')}</h2><p>{t('mcpIntro')}</p></div>
+      <button type="button" disabled={busy} onClick={() => request('list')}>{t('refresh')}</button></header>
+    <PageState state={state} t={t} />
+    <section className="dsh-ext-card">
+      <header><h3>{t('mcp')} <span className="dsh-ext-count">{rows.length}</span></h3>
+        <button type="button" disabled={busy || !state.revision} onClick={() => setForm(true)}>{t('addMcp')}</button></header>
+      {rows.length === 0 && <div className="dsh-ext-empty"><strong>{t('emptyMcp')}</strong><p>{t('emptyMcpHint')}</p></div>}
+      <ul>{rows.map(row => <li key={row.id}><div className="dsh-ext-details"><strong>{row.id}</strong><code>{row.location}</code><McpRuntime row={row} t={t} /></div>
+        <button type="button" role="switch" aria-checked={row.enabled} aria-label={`${t(row.enabled ? 'disable' : 'enable')} ${row.id}`} disabled={busy}
+          onClick={() => request('enable', { id: row.id, enabled: !row.enabled })}>{t(row.enabled ? 'disable' : 'enable')}</button></li>)}</ul>
+      {form && <AddForm kind="mcp" t={t} busy={busy} onCancel={() => setForm(false)} onSave={async args => {
+        if (await request('add-mcp', args)) setForm(false)
+      }} />}
+    </section>
+    <p className="dsh-ext-footnote">{t('mcpFootnote')}</p>
+  </section>
+}
+
+function useLiveRefresh(request) {
   useEffect(() => {
     void request('list')
-    if (kind !== 'mcp') return
     let timer
     const poll = () => {
       if (document.visibilityState === 'visible') void request('list', {}, { silent: true })
-      timer = window.setTimeout(poll, mcpPollIntervalMs)
+      timer = window.setTimeout(poll, settingsPollIntervalMs)
     }
     const refreshWhenVisible = () => {
       if (document.visibilityState === 'visible') void request('list', {}, { silent: true })
     }
-    timer = window.setTimeout(poll, mcpPollIntervalMs)
+    timer = window.setTimeout(poll, settingsPollIntervalMs)
     document.addEventListener('visibilitychange', refreshWhenVisible)
     return () => {
       window.clearTimeout(timer)
       document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
-  }, [kind, request])
-  return <section className="dsh-ext">
-    <header className="dsh-ext-heading"><div><h2>{t(kind === 'skill' ? 'navSkill' : 'navMcp')}</h2><p>{t(kind === 'skill' ? 'skillIntro' : 'mcpIntro')}</p></div>
-      <button type="button" disabled={busy} onClick={() => request('list')}>{t('refresh')}</button></header>
-    {state.loading && <p role="status">{t('loading')}</p>}
+  }, [request])
+}
+
+function PageState({ state, t }) {
+  return <>{state.loading && <p role="status">{t('loading')}</p>}
     {state.error && <p className="dsh-ext-notice" role="alert">{t(state.error)}</p>}
-    {state.saved && <p className="dsh-ext-notice" role="status">{t('saved')}</p>}
-    <section className="dsh-ext-card">
-      <header><h3>{t(kind === 'skill' ? 'skills' : 'mcp')} <span className="dsh-ext-count">{rows.length}</span></h3>
-        <button type="button" disabled={busy || !state.revision} onClick={() => setForm(kind)}>{t(kind === 'skill' ? 'add' : 'addMcp')}</button></header>
-      {rows.length === 0 && <div className="dsh-ext-empty"><strong>{t(kind === 'skill' ? 'emptySkills' : 'emptyMcp')}</strong><p>{t(kind === 'skill' ? 'emptySkillsHint' : 'emptyMcpHint')}</p></div>}
-      <ul>{rows.map(row => <li key={row.id}><div className="dsh-ext-details"><strong>{row.id}</strong><code>{row.location}</code>
-        {kind === 'mcp' ? <McpRuntime row={row} t={t} /> : <small>{t(row.enabled ? 'enabled' : 'disabled')}</small>}</div>
-        <button type="button" role="switch" aria-checked={row.enabled} aria-label={`${t(row.enabled ? 'disable' : 'enable')} ${row.id}`} disabled={busy}
-          onClick={() => request('enable', { id: row.id, enabled: !row.enabled })}>{t(row.enabled ? 'disable' : 'enable')}</button></li>)}</ul>
-      {form === kind && <AddForm kind={kind} t={t} busy={busy} onCancel={() => setForm(null)} onSave={async args => {
-        if (await request(kind === 'skill' ? 'add-skill' : 'add-mcp', args)) setForm(null)
-      }} />}
-    </section>
-    <p className="dsh-ext-footnote">{t(kind === 'skill' ? 'skillFootnote' : 'mcpFootnote')}</p>
-  </section>
+    {state.saved && <p className="dsh-ext-notice" role="status">{t('saved')}</p>}</>
+}
+
+function SkillRow({ skill, t, busy, request }) {
+  const state = !skill.valid ? 'invalid' : !skill.sourceEnabled || (!skill.modelInvocable && !skill.userInvocable)
+    ? 'disabled' : skill.shadowed ? 'shadowed' : !skill.modelInvocable ? 'manual' : 'available'
+  const invocation = skill.modelInvocable && skill.userInvocable ? 'both'
+    : skill.modelInvocable ? 'modelOnly' : skill.userInvocable ? 'manualOnly' : 'none'
+  const statusLabel = !skill.valid ? 'skillStatusInvalid' : !skill.sourceEnabled ? 'skillStatusSourceDisabled'
+    : skill.shadowed ? 'skillStatusShadowed' : ''
+  const update = patch => request('set-skill-invocation', {
+    sourceId: skill.sourceId, relativePath: skill.relativePath, skillRevision: skill.revision,
+    modelInvocable: skill.modelInvocable, userInvocable: skill.userInvocable, ...patch,
+  })
+  return <li className="dsh-skill-row"><div className="dsh-skill-row-main">
+    <div className="dsh-skill-name"><span className={`dsh-ext-status dsh-ext-status-${state}`} aria-hidden="true" /><strong>{skill.name}</strong>
+      <span className="dsh-skill-badge">{t(`format_${skill.format}`)}</span><span className="dsh-skill-badge">{t(`invocation_${invocation}`)}</span>
+      {statusLabel && <span className={`dsh-skill-badge dsh-skill-badge-${state}`}>{t(statusLabel)}</span>}</div>
+    <p>{skill.description || t('noDescription')}</p><code>{skill.relativePath}</code>
+    <details><summary>{t('details')}</summary><div className="dsh-skill-detail">
+      {skill.whenToUse && <p><strong>{t('whenToUse')}</strong>{skill.whenToUse}</p>}
+      {skill.issues.length > 0 && <div><strong>{t('diagnostics')}</strong><ul>{skill.issues.map(issue => <li key={issue}>{t(`issue_${issue}`)}</li>)}</ul></div>}
+      <div className="dsh-skill-invocation"><strong>{t('invocation')}</strong>
+        <label><input type="checkbox" checked={skill.modelInvocable} disabled={busy || !skill.valid} onChange={event => update({ modelInvocable: event.target.checked })} /> {t('modelInvocable')}</label>
+        <label><input type="checkbox" checked={skill.userInvocable} disabled={busy || !skill.valid} onChange={event => update({ userInvocable: event.target.checked })} /> {t('userInvocable')}</label></div>
+      <div><strong>{t('resources')}</strong>{skill.resources.length
+        ? <ul className="dsh-skill-resources">{skill.resources.map(path => <li key={path}><code>{path}</code></li>)}</ul>
+        : <p>{t('noResources')}</p>}</div>
+    </div></details>
+  </div></li>
 }
 
 function McpRuntime({ row, t }) {
@@ -90,6 +172,31 @@ function McpRuntime({ row, t }) {
       <ul className="dsh-ext-tools">{tools.map(name => <li key={name}><code title={name}>{name.startsWith(prefix) ? name.slice(prefix.length) : name}</code></li>)}</ul>
     </details>}
   </div>
+}
+
+function NewSkillForm({ sources, t, busy, onSave, onCancel }) {
+  const prefix = useId()
+  return <form className="dsh-ext-form dsh-skill-create" onSubmit={event => {
+    event.preventDefault()
+    const data = new FormData(event.currentTarget)
+    void onSave({
+      sourceId: data.get('sourceId'), name: data.get('name'), description: data.get('description'),
+      whenToUse: data.get('whenToUse'), modelInvocable: data.has('modelInvocable'),
+      userInvocable: data.has('userInvocable'), structure: data.get('structure'),
+    })
+  }}><fieldset disabled={busy}>
+    <label htmlFor={`${prefix}-sourceId`}>{t('source')}<select id={`${prefix}-sourceId`} name="sourceId">
+      {sources.map(source => <option key={source.id} value={source.id}>{source.id}</option>)}</select></label>
+    <label htmlFor={`${prefix}-name`}>{t('skillName')}<input id={`${prefix}-name`} name="name" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" autoComplete="off" /></label>
+    <label className="dsh-ext-span" htmlFor={`${prefix}-description`}>{t('description')}<textarea id={`${prefix}-description`} name="description" rows={3} required /></label>
+    <label className="dsh-ext-span" htmlFor={`${prefix}-whenToUse`}>{t('whenToUse')}<textarea id={`${prefix}-whenToUse`} name="whenToUse" rows={2} /></label>
+    <label htmlFor={`${prefix}-structure`}>{t('structure')}<select id={`${prefix}-structure`} name="structure">
+      <option value="minimal">{t('structureMinimal')}</option><option value="standard">{t('structureStandard')}</option></select></label>
+    <div className="dsh-skill-create-flags"><span>{t('invocation')}</span>
+      <label><input type="checkbox" name="modelInvocable" defaultChecked /> {t('modelInvocable')}</label>
+      <label><input type="checkbox" name="userInvocable" defaultChecked /> {t('userInvocable')}</label></div>
+    <div className="dsh-ext-actions"><button type="button" onClick={onCancel}>{t('cancel')}</button><button type="submit">{t(busy ? 'saving' : 'create')}</button></div>
+  </fieldset></form>
 }
 
 function AddForm({ kind, t, busy, onSave, onCancel }) {

@@ -1,6 +1,6 @@
 /** One observable per mounted plugin; drafts stay in the settings component. */
 export class ExtensionsController {
-  state = { extensions: [], revision: '', loading: false, saving: false, error: '', saved: false }
+  state = { extensions: [], sources: [], skills: [], revision: '', loading: false, saving: false, error: '', saved: false }
   listeners = new Set()
   lifetime = new AbortController()
   generation = 0

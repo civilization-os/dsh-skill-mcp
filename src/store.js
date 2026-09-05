@@ -107,9 +107,10 @@ export class ExtensionStore {
 
   async addSkill(id, directory, signal, expectedRevision) {
     validateId(id)
-    if (!isAbsolute(directory) || !(await stat(directory)).isDirectory()) throw new Error('Skill root must be an existing absolute directory containing skill bundles.')
+    const normalizedDirectory = normalizeWindowsPath(directory)
+    if (!isAbsolute(normalizedDirectory) || !(await stat(normalizedDirectory)).isDirectory()) throw new Error('Skill root must be an existing absolute directory containing skill bundles.')
     return this.add({ id, name: modules.skill, disabled: true, config: {
-      providerName: `managed-${id}`, includeDefaultRoots: false, customSkillDirs: [directory],
+      providerName: `managed-${id}`, includeDefaultRoots: false, customSkillDirs: [normalizedDirectory],
     } }, signal, expectedRevision)
   }
 

@@ -31,7 +31,8 @@
     "@deepseek-ai/dsh-skill-filesystem": "link:../deepseek-harness/packages/skill/skill-filesystem",
     "@deepseek-ai/dsh-system-prompt": "link:../deepseek-harness/packages/core/system-prompt",
     "@deepseek-ai/dsh-tools": "link:../deepseek-harness/packages/core/tools",
-    "@deepseek-ai/schemastery": "link:../deepseek-harness/vendor/schemastery"
+    "@deepseek-ai/schemastery": "link:../deepseek-harness/vendor/schemastery",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
