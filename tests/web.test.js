@@ -1,0 +1,89 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { ExtensionStore } from '../src/store.js'
+import { createWebHandler } from '../src/web.js'
+import { ExtensionsController } from '../src/client/controller.js'
+import { zh, en } from '../src/client/locales.js'
+
+async function fixture(t) {
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-web-ext-'))
+  t.after(() => rm(directory, { recursive: true, force: true }))
+  const path = join(directory, 'extensions.json')
+  await writeFile(path, '[{"insert":[]}]')
+  const store = new ExtensionStore(path)
+  const handler = createWebHandler(store, { tools: { schemas: () => [{ name: 'mcp__demo__ping' }] } })
+  return { directory, store, call: (method, payload) => handler(method, payload, new AbortController().signal) }
+}
+
+test('settings writes reject stale revisions while retaining the newer record', async t => {
+  const { store, call, directory } = await fixture(t)
+  const { value } = await call('list', {})
+  const added = await call('add-skill', { id: 'notes', directory, revision: value.revision })
+  assert.equal(added.ok, true)
+  const stale = await call('enable', { id: 'notes', enabled: true, revision: value.revision })
+  assert.equal(stale.error.code, 'extensions/conflict')
+  assert.equal((await store.read())[0].disabled, true)
+  const enabled = await call('enable', { id: 'notes', enabled: true, revision: added.value.revision })
+  assert.equal(enabled.value.extensions[0].enabled, true)
+})
+
+test('wire validation rejects missing revision and does not echo submitted credentials', async t => {
+  const { call, store } = await fixture(t)
+  const bad = await call('add-mcp', { id: 'demo', configuration: '{"headers":{"Authorization":"private-secret"}}', revision: 'bad' })
+  assert.equal(bad.ok, false)
+  assert.equal(JSON.stringify(bad).includes('private-secret'), false)
+  assert.equal((await call('enable', { id: 'demo', enabled: true })).ok, false)
+  assert.equal((await call('toString', {})).ok, false)
+  assert.deepEqual(await store.read(), [])
+})
+
+test('MCP view reports observed tools independently of configured enabled state', async t => {
+  const { call, store } = await fixture(t)
+  await store.addMcp('demo', { transport: 'streamable-http', url: 'http://localhost:9000/mcp' })
+  const { value } = await call('list', {})
+  assert.equal(value.extensions[0].enabled, false)
+  assert.equal(value.extensions[0].toolCount, 1)
+})
+
+test('a slower refresh cannot replace the result of a later save', async () => {
+  let resolveRead
+  const controller = new ExtensionsController(endpoint => endpoint === 'list'
+    ? new Promise(resolve => { resolveRead = resolve })
+    : Promise.resolve({ ok: true, value: { revision: 'new', extensions: [{ id: 'notes' }] } }))
+  const read = controller.request('list')
+  await controller.request('enable', { id: 'notes', enabled: true })
+  resolveRead({ ok: true, value: { revision: 'old', extensions: [] } })
+  await read
+  assert.equal(controller.state.revision, 'new')
+  assert.equal(controller.state.saved, true)
+  controller.dispose()
+})
+
+test('disposed controllers suppress late completions and subscriptions', async () => {
+  let resolve
+  const controller = new ExtensionsController(() => new Promise(done => { resolve = done }))
+  let notifications = 0
+  controller.subscribe(() => notifications++)
+  const pending = controller.request('list')
+  controller.dispose()
+  resolve({ ok: true, value: { revision: 'late', extensions: [] } })
+  await pending
+  assert.equal(notifications, 1)
+  assert.equal(controller.state.revision, '')
+})
+
+test('conflicts retain the displayed data and surface a localized recovery state', async () => {
+  const controller = new ExtensionsController(async () => ({ ok: false, error: { code: 'extensions/conflict' } }))
+  controller.publish({ revision: 'old', extensions: [{ id: 'notes' }] })
+  assert.equal(await controller.request('enable', {}), false)
+  assert.equal(controller.state.error, 'conflict')
+  assert.equal(controller.state.extensions[0].id, 'notes')
+  controller.dispose()
+})
+
+test('Chinese and English settings dictionaries have identical keys', () => {
+  assert.deepEqual(Object.keys(zh).sort(), Object.keys(en).sort())
+})
