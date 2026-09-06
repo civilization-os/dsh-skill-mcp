@@ -1,8 +1,19 @@
 {
-  "name": "dsh-skill-mcp",
+  "name": "deepseek-harness-skill-mcp",
   "version": "0.1.0",
   "description": "Skill path and MCP server management for DeepSeek Harness Web",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/civilization-os/dsh-skill-mcp.git"
+  },
+  "homepage": "https://github.com/civilization-os/dsh-skill-mcp#readme",
+  "bugs": "https://github.com/civilization-os/dsh-skill-mcp/issues",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/"
+  },
   "type": "module",
   "exports": {
     ".": "./src/index.js",
@@ -36,6 +47,7 @@
   "engines": {
     "node": ">=22.19.0"
   },
+  "packageManager": "pnpm@10.33.0",
   "dependencies": {
     "@deepseek-ai/dsh-mcp-client": "0.1.2-rc.1",
     "@deepseek-ai/dsh-skill-filesystem": "0.1.2-rc.1",

@@ -18,6 +18,12 @@ Git 安装可以锁定到具体 commit，避免以后安装到未经确认的新
 dsh plugin --profile web add github:civilization-os/dsh-skill-mcp#<commit-sha>
 ```
 
+也可以从 npm 安装正式版本：
+
+```sh
+dsh plugin --profile web add deepseek-harness-skill-mcp
+```
+
 安装完成后重启 Web profile：
 
 ```sh
@@ -34,8 +40,8 @@ pnpm dsh --profile web
 更新或卸载：
 
 ```sh
-dsh plugin --profile web update dsh-skill-mcp
-dsh plugin --profile web remove dsh-skill-mcp
+dsh plugin --profile web update deepseek-harness-skill-mcp
+dsh plugin --profile web remove deepseek-harness-skill-mcp
 ```
 
 Bundle 的新增、更新和移除都需要重启正在运行的 Web profile。Skill 与 MCP 配置保存在用户自己的 profile patch 中；卸载插件不会自动删除这些配置行。
@@ -133,5 +139,14 @@ pnpm run web
 ## 验证
 
 自动测试覆盖配置持久化、Skill 多路径与用户分组、并发 revision、Skill 创建与调用权限、MCP 工具发现和卸载、轮询状态以及中英文词典一致性。测试不需要模型 API key。
+
+## 发布
+
+推送和 Pull Request 会运行构建与测试。推送与 `package.json` 版本一致的 `v*` 标签后，GitHub Actions 会从 `NPM_TOKEN` Actions Secret 发布 npm 包并附带 provenance。例如发布 `0.1.0`：
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
 
 许可证：[Apache-2.0](LICENSE)。

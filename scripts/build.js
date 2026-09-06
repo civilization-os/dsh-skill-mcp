@@ -8,5 +8,5 @@ const result = await build({
   external: ['react', 'react/jsx-runtime'], loader: { '.css': 'text' },
 })
 await mkdir('lib', { recursive: true })
-await writeFile('lib/client.js', 'window.__ModuleLoader__.load({id:"dsh-skill-mcp",factory:(require)=>{\nvar module={exports:{}};var exports=module.exports;\n'
+await writeFile('lib/client.js', 'window.__ModuleLoader__.load({id:"deepseek-harness-skill-mcp",factory:(require)=>{\nvar module={exports:{}};var exports=module.exports;\n'
   + result.outputFiles[0].text + '\nreturn module.exports;}});\n')
