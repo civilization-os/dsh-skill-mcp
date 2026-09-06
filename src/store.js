@@ -1,6 +1,6 @@
 /** Owns a marked block inside a profile Cordis patch while retaining legacy JSON stores. */
 import { open, readFile, rename, unlink, stat } from 'node:fs/promises'
-import { basename, isAbsolute, win32 } from 'node:path'
+import { basename, isAbsolute, resolve, win32 } from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
 import { Config as McpConfig } from '@deepseek-ai/dsh-mcp-client'
 import { Config as SkillConfig } from '@deepseek-ai/dsh-skill-filesystem'
@@ -21,6 +21,12 @@ const blockEnd = '# dsh-skill-mcp:managed-end'
 function normalizeWindowsPath(value) {
   const trimmed = value.trim()
   return /^[A-Za-z]:[\\/]/.test(trimmed) ? win32.normalize(trimmed) : trimmed
+}
+
+function samePath(left, right) {
+  const windows = value => /^[A-Za-z]:[\\/]/.test(value)
+  if (windows(left) && windows(right)) return win32.normalize(left).toLowerCase() === win32.normalize(right).toLowerCase()
+  return resolve(left) === resolve(right)
 }
 
 export function revisionOf(rows) {
@@ -152,7 +158,7 @@ export class ExtensionStore {
     const normalizedDirectory = normalizeWindowsPath(directory)
     if (!isAbsolute(normalizedDirectory) || !(await stat(normalizedDirectory)).isDirectory()) throw new Error('Skill root must be an existing absolute directory containing skill bundles.')
     return this.update(rows => {
-      if (rows.some(row => !row.config.serverName && win32.normalize(row.config.customSkillDirs[0]).toLowerCase() === normalizedDirectory.toLowerCase())) {
+      if (rows.some(row => !row.config.serverName && samePath(row.config.customSkillDirs[0], normalizedDirectory))) {
         throw new Error('Skill path already exists.')
       }
       const stem = basename(normalizedDirectory).replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'skills'
