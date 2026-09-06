@@ -35,13 +35,19 @@ export function SkillSection({ t, useManager, request }) {
   const state = useManager(value => value)
   const [form, setForm] = useState('')
   const [query, setQuery] = useState('')
-  const [groupBy, setGroupBy] = useState('path')
+  const [sourceFilter, setSourceFilter] = useState('all')
+  const [groupFilter, setGroupFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
   const busy = state.loading || state.saving
   const sources = state.sources ?? []
   const skills = state.skills ?? []
+  const groups = [...new Set(skills.map(skill => skill.group).filter(Boolean))].sort((a, b) => a.localeCompare(b))
   const visible = skills.filter(skill => {
     const source = sources.find(item => item.id === skill.sourceId)
-    return `${skill.name} ${skill.description} ${source?.location ?? ''} ${source?.group ?? ''}`.toLowerCase().includes(query.toLowerCase())
+    const matchesQuery = `${skill.name} ${skill.description} ${source?.location ?? ''} ${skill.group ?? ''}`.toLowerCase().includes(query.toLowerCase())
+    return matchesQuery && (sourceFilter === 'all' || skill.sourceId === sourceFilter)
+      && (groupFilter === 'all' || (groupFilter === 'ungrouped' ? !skill.group : skill.group === groupFilter))
+      && (statusFilter === 'all' || skillState(skill) === statusFilter)
   })
   const counts = {
     all: skills.length,
@@ -61,9 +67,16 @@ export function SkillSection({ t, useManager, request }) {
     </div>
     <label className="dsh-skill-search"><span className="dsh-visually-hidden">{t('search')}</span>
       <input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder={t('searchPlaceholder')} /></label>
-    <div className="dsh-skill-grouping" role="group" aria-label={t('groupView')}>
-      <span>{t('groupView')}</span><button type="button" aria-pressed={groupBy === 'path'} onClick={() => setGroupBy('path')}>{t('groupByPath')}</button>
-      <button type="button" aria-pressed={groupBy === 'custom'} onClick={() => setGroupBy('custom')}>{t('groupByCustom')}</button>
+    <div className="dsh-skill-filters">
+      <label>{t('filterSource')}<select value={sourceFilter} onChange={event => setSourceFilter(event.target.value)}>
+        <option value="all">{t('filterAllSources')}</option>{sources.map(source => <option key={source.id} value={source.id}>{source.id}</option>)}</select></label>
+      <label>{t('filterGroup')}<select value={groupFilter} onChange={event => setGroupFilter(event.target.value)}>
+        <option value="all">{t('filterAllGroups')}</option><option value="ungrouped">{t('ungrouped')}</option>
+        {groups.map(group => <option key={group} value={group}>{group}</option>)}</select></label>
+      <label>{t('filterStatus')}<select value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>
+        <option value="all">{t('filterAllStatuses')}</option><option value="available">{t('stat_automatic')}</option>
+        <option value="manual">{t('stat_manual')}</option><option value="disabled">{t('disabled')}</option>
+        <option value="invalid">{t('stat_invalid')}</option><option value="shadowed">{t('skillStatusShadowed')}</option></select></label>
     </div>
     {form === 'source' && <AddForm kind="skill" t={t} busy={busy} onCancel={() => setForm('')} onSave={async args => {
       if (await request('add-skill', args)) setForm('')
@@ -72,50 +85,24 @@ export function SkillSection({ t, useManager, request }) {
       if (await request('create-skill', args)) setForm('')
     }} />}
     {sources.length === 0 && <div className="dsh-ext-card dsh-ext-empty"><strong>{t('emptySkills')}</strong><p>{t('emptySkillsHint')}</p></div>}
-    <div className="dsh-skill-sources">{groupBy === 'path' ? sources.map(source => <SkillPath key={source.id} source={source} skills={skills} visible={visible} query={query} t={t} busy={busy} request={request} />)
-      : groupSources(sources.filter(source => !query || visible.some(skill => skill.sourceId === source.id))).map(group => <section className="dsh-skill-user-group" key={group.name}>
-        <header><h3>{group.name || t('ungrouped')} <span className="dsh-ext-count">{group.sources.reduce((total, source) => total + skills.filter(skill => skill.sourceId === source.id).length, 0)}</span></h3></header>
-        <div>{group.sources.map(source => <SkillPath key={source.id} source={source} skills={skills} visible={visible} query={query} t={t} busy={busy} request={request} nested />)}</div>
-      </section>)}</div>
+    {sources.length > 0 && <SkillSources sources={sources} skills={skills} t={t} busy={busy} request={request} />}
+    {sources.length > 0 && <section className="dsh-ext-card dsh-skill-library"><header><h3>{t('skillLibrary')} <span className="dsh-ext-count">{t('showingCount').replace('{visible}', visible.length).replace('{all}', skills.length)}</span></h3></header>
+      {visible.length === 0 ? <div className="dsh-ext-empty"><strong>{t('noFilterResults')}</strong><p>{t('noFilterResultsHint')}</p></div>
+        : <ul>{visible.map(skill => <SkillRow key={`${skill.sourceId}:${skill.relativePath}`} skill={skill}
+          source={sources.find(item => item.id === skill.sourceId)} groups={groups} t={t} busy={busy} request={request} />)}</ul>}
+    </section>}
     <p className="dsh-ext-footnote">{t('skillFootnote')}</p>
   </section>
 }
 
-function groupSources(sources) {
-  const groups = new Map()
-  for (const source of sources) {
-    const key = source.group || ''
-    if (!groups.has(key)) groups.set(key, [])
-    groups.get(key).push(source)
-  }
-  return [...groups].map(([name, entries]) => ({ name, sources: entries }))
-    .sort((a, b) => a.name.localeCompare(b.name))
-}
-
-function SkillPath({ source, skills, visible, query, t, busy, request, nested = false }) {
-  const rows = visible.filter(skill => skill.sourceId === source.id)
-  if (query && rows.length === 0) return null
-  return <section className={`dsh-skill-source${nested ? ' dsh-skill-source-nested' : ''}`}>
-    <header><div className="dsh-skill-source-title"><span className={`dsh-ext-status ${source.enabled ? 'dsh-ext-status-available' : ''}`} aria-hidden="true" />
-      <div><h3>{source.location} <span className="dsh-ext-count">{skills.filter(skill => skill.sourceId === source.id).length}</span></h3>
-        <small>{source.group ? `${t('customGroup')}: ${source.group}` : t('ungrouped')}</small></div></div>
+function SkillSources({ sources, skills, t, busy, request }) {
+  return <details className="dsh-ext-card dsh-skill-source-manager"><summary>{t('skillSources')} <span className="dsh-ext-count">{sources.length}</span></summary>
+    <ul>{sources.map(source => <li key={source.id}><div className="dsh-skill-source-title"><span className={`dsh-ext-status ${source.enabled ? 'dsh-ext-status-available' : ''}`} aria-hidden="true" />
+      <div><strong>{source.id} <span className="dsh-ext-count">{skills.filter(skill => skill.sourceId === source.id).length}</span></strong><code>{source.location}</code>
+        {source.issue && <small>{t(`issue_${source.issue}`)}</small>}</div></div>
       <button type="button" role="switch" aria-checked={source.enabled} disabled={busy}
-        onClick={() => request('enable', { id: source.id, enabled: !source.enabled })}>{t(source.enabled ? 'disable' : 'enable')}</button></header>
-    <GroupEditor source={source} t={t} busy={busy} request={request} />
-    {source.issue && <p className="dsh-ext-notice">{t(`issue_${source.issue}`)}</p>}
-    {rows.length === 0 ? <div className="dsh-ext-empty"><p>{t('sourceEmpty')}</p></div>
-      : <ul>{rows.map(skill => <SkillRow key={skill.relativePath} skill={skill} t={t} busy={busy} request={request} />)}</ul>}
-  </section>
-}
-
-function GroupEditor({ source, t, busy, request }) {
-  const [group, setGroup] = useState(source.group)
-  useEffect(() => setGroup(source.group), [source.group])
-  return <form className="dsh-skill-group-editor" onSubmit={event => {
-    event.preventDefault()
-    void request('set-skill-group', { id: source.id, group })
-  }}><label>{t('customGroup')}<input value={group} maxLength={64} disabled={busy} onChange={event => setGroup(event.target.value)} placeholder={t('groupPlaceholder')} /></label>
-    <button type="submit" disabled={busy || group.trim() === source.group}>{t('saveGroup')}</button></form>
+        onClick={() => request('enable', { id: source.id, enabled: !source.enabled })}>{t(source.enabled ? 'disable' : 'enable')}</button></li>)}</ul>
+  </details>
 }
 
 export function McpSection({ t, useManager, request }) {
@@ -169,9 +156,13 @@ function PageState({ state, t }) {
     {state.saved && <p className="dsh-ext-notice" role="status">{t('saved')}</p>}</>
 }
 
-function SkillRow({ skill, t, busy, request }) {
-  const state = !skill.valid ? 'invalid' : !skill.sourceEnabled || (!skill.modelInvocable && !skill.userInvocable)
+function skillState(skill) {
+  return !skill.valid ? 'invalid' : !skill.sourceEnabled || (!skill.modelInvocable && !skill.userInvocable)
     ? 'disabled' : skill.shadowed ? 'shadowed' : !skill.modelInvocable ? 'manual' : 'available'
+}
+
+function SkillRow({ skill, source, groups, t, busy, request }) {
+  const state = skillState(skill)
   const invocation = skill.modelInvocable && skill.userInvocable ? 'both'
     : skill.modelInvocable ? 'modelOnly' : skill.userInvocable ? 'manualOnly' : 'none'
   const statusLabel = !skill.valid ? 'skillStatusInvalid' : !skill.sourceEnabled ? 'skillStatusSourceDisabled'
@@ -183,19 +174,35 @@ function SkillRow({ skill, t, busy, request }) {
   return <li className="dsh-skill-row"><div className="dsh-skill-row-main">
     <div className="dsh-skill-name"><span className={`dsh-ext-status dsh-ext-status-${state}`} aria-hidden="true" /><strong>{skill.name}</strong>
       <span className="dsh-skill-badge">{t(`format_${skill.format}`)}</span><span className="dsh-skill-badge">{t(`invocation_${invocation}`)}</span>
+      {skill.group && <span className="dsh-skill-badge dsh-skill-badge-group">{skill.group}</span>}
       {statusLabel && <span className={`dsh-skill-badge dsh-skill-badge-${state}`}>{t(statusLabel)}</span>}</div>
-    <p>{skill.description || t('noDescription')}</p><code>{skill.relativePath}</code>
+    <p>{skill.description || t('noDescription')}</p><code>{source?.id} · {skill.relativePath}</code>
     <details><summary>{t('details')}</summary><div className="dsh-skill-detail">
       {skill.whenToUse && <p><strong>{t('whenToUse')}</strong>{skill.whenToUse}</p>}
       {skill.issues.length > 0 && <div><strong>{t('diagnostics')}</strong><ul>{skill.issues.map(issue => <li key={issue}>{t(`issue_${issue}`)}</li>)}</ul></div>}
       <div className="dsh-skill-invocation"><strong>{t('invocation')}</strong>
         <label><input type="checkbox" checked={skill.modelInvocable} disabled={busy || !skill.valid} onChange={event => update({ modelInvocable: event.target.checked })} /> {t('modelInvocable')}</label>
         <label><input type="checkbox" checked={skill.userInvocable} disabled={busy || !skill.valid} onChange={event => update({ userInvocable: event.target.checked })} /> {t('userInvocable')}</label></div>
+      <SkillGroupEditor skill={skill} groups={groups} t={t} busy={busy} request={request} />
       <div><strong>{t('resources')}</strong>{skill.resources.length
         ? <ul className="dsh-skill-resources">{skill.resources.map(path => <li key={path}><code>{path}</code></li>)}</ul>
         : <p>{t('noResources')}</p>}</div>
     </div></details>
   </div></li>
+}
+
+function SkillGroupEditor({ skill, groups, t, busy, request }) {
+  const currentGroup = skill.group ?? ''
+  const [group, setGroup] = useState(currentGroup)
+  const suggestions = useId()
+  useEffect(() => setGroup(currentGroup), [currentGroup])
+  return <form className="dsh-skill-group-editor" onSubmit={event => {
+    event.preventDefault()
+    void request('set-skill-group', { sourceId: skill.sourceId, relativePath: skill.relativePath, skillRevision: skill.revision, group })
+  }}><label>{t('customGroup')}<input list={suggestions} value={group} maxLength={64} disabled={busy || !skill.valid}
+    onChange={event => setGroup(event.target.value)} placeholder={t('groupPlaceholder')} /></label>
+    <datalist id={suggestions}>{groups.map(name => <option key={name} value={name} />)}</datalist>
+    <button type="submit" disabled={busy || !skill.valid || group.trim() === currentGroup}>{t('saveGroup')}</button></form>
 }
 
 function McpRuntime({ row, t }) {
@@ -245,13 +252,13 @@ function AddForm({ kind, t, busy, onSave, onCancel }) {
   return <form className="dsh-ext-form" onSubmit={event => {
     event.preventDefault()
     const data = Object.fromEntries(new FormData(event.currentTarget))
-    const args = kind === 'skill' ? { directory: data.directory, group: data.group ?? '' } : {
+    const args = kind === 'skill' ? { directory: data.directory } : {
       id: data.id, configuration: JSON.stringify(transport === 'stdio'
         ? { transport, command: data.command, args: data.args.split(/\r?\n/).filter(Boolean), cwd: data.cwd }
         : { transport, url: data.url }),
     }
     void onSave(args)
-  }}><fieldset disabled={busy}>{kind === 'skill' ? <>{field('directory')} {field('group', false)}</> : <>{field('id')}
+  }}><fieldset disabled={busy}>{kind === 'skill' ? field('directory') : <>{field('id')}
       <label htmlFor={`${prefix}-transport`}>{t('transport')}<select id={`${prefix}-transport`} value={transport} onChange={event => setTransport(event.target.value)}>
         <option value="stdio">{t('stdio')}</option><option value="streamable-http">{t('http')}</option></select></label>
       {transport === 'stdio' ? <>{field('command')}{field('args', false, true)}{field('cwd', false)}</> : field('url')}

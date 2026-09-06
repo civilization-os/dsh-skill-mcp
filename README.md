@@ -63,7 +63,8 @@ skills/
 Skill 页面支持：
 
 - 添加、启用和禁用多个 Skill 路径
-- 按路径或用户自定义分组展示
+- 用独立的来源、用户分组和状态条件筛选技能
+- 为单个 Skill 设置用户分组；分组保存在对应 `SKILL.md` 的 `metadata` 中
 - 搜索、数量统计、frontmatter 格式诊断和同名覆盖提示
 - 查看 `scripts`、`references`、`assets` 等资源文件
 - 控制模型自动选择和用户 `/name` 调用
@@ -138,7 +139,7 @@ pnpm run web
 
 ## 验证
 
-自动测试覆盖配置持久化、Skill 多路径与用户分组、并发 revision、Skill 创建与调用权限、MCP 工具发现和卸载、轮询状态以及中英文词典一致性。测试不需要模型 API key。
+自动测试覆盖配置持久化、Skill 多路径与单技能用户分组、并发 revision、Skill 创建与调用权限、MCP 工具发现和卸载、轮询状态以及中英文词典一致性。测试不需要模型 API key。
 
 ## 发布
 

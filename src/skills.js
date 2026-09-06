@@ -48,6 +48,8 @@ function parseFrontmatter(content) {
     whenToUse: typeof data.whenToUse === 'string' ? data.whenToUse.trim() : '',
     modelInvocable,
     userInvocable,
+    group: typeof data.metadata?.['dsh-skill-mcp/group'] === 'string'
+      ? data.metadata['dsh-skill-mcp/group'].trim().slice(0, 64) : '',
   }
 }
 
@@ -84,6 +86,7 @@ async function inspectSkill(source, path, format) {
       whenToUse: parsed.whenToUse,
       modelInvocable: parsed.modelInvocable,
       userInvocable: parsed.userInvocable,
+      group: parsed.group,
       valid: parsed.issues.length === 0,
       issues: parsed.issues,
       resources,
@@ -95,7 +98,7 @@ async function inspectSkill(source, path, format) {
     return {
       sourceId: source.id, sourceEnabled: source.enabled, relativePath, format,
       name: basename(path, extname(path)), description: '', whenToUse: '',
-      modelInvocable: false, userInvocable: false, valid: false, issues: [issue], resources: [], revision: '',
+      modelInvocable: false, userInvocable: false, group: '', valid: false, issues: [issue], resources: [], revision: '',
     }
   }
 }
@@ -104,7 +107,6 @@ async function inspectSkill(source, path, format) {
 export async function inspectSkills(rows) {
   const sources = rows.filter(row => !row.config.serverName).map(row => ({
     id: row.id, enabled: !row.disabled, location: row.config.customSkillDirs[0],
-    group: typeof row.config.extensionManagerGroup === 'string' ? row.config.extensionManagerGroup : '',
   }))
   const skills = []
   for (const source of sources) {
@@ -164,8 +166,7 @@ export async function createSkill(rows, input) {
   }
 }
 
-/** Update only invocation frontmatter after checking the exact inspected file revision. */
-export async function setSkillInvocation(rows, input) {
+async function updateSkillFrontmatter(rows, input, update) {
   const root = skillSource(rows, input.sourceId)
   const inventory = await inspectSkills(rows)
   const skill = inventory.skills.find(item => item.sourceId === input.sourceId && item.relativePath === input.relativePath)
@@ -177,11 +178,33 @@ export async function setSkillInvocation(rows, input) {
     throw Object.assign(new Error('Skill changed. Refresh before saving.'), { code: 'CONFLICT' })
   }
   const parsed = parseFrontmatter(content)
-  if (input.modelInvocable) delete parsed.data['disable-model-invocation']
-  else parsed.data['disable-model-invocation'] = true
-  if (input.userInvocable) delete parsed.data['user-invocable']
-  else parsed.data['user-invocable'] = false
+  update(parsed.data)
   const temporary = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`)
   await writeFile(temporary, `---\n${stringify(parsed.data)}---\n${parsed.body}`)
   await rename(temporary, path)
+}
+
+/** Update only invocation frontmatter after checking the exact inspected file revision. */
+export async function setSkillInvocation(rows, input) {
+  await updateSkillFrontmatter(rows, input, data => {
+    if (input.modelInvocable) delete data['disable-model-invocation']
+    else data['disable-model-invocation'] = true
+    if (input.userInvocable) delete data['user-invocable']
+    else data['user-invocable'] = false
+  })
+}
+
+/** Store a user-defined group on one Skill without changing provider configuration. */
+export async function setSkillGroup(rows, input) {
+  await updateSkillFrontmatter(rows, input, data => {
+    const group = input.group.trim().slice(0, 64)
+    if (data.metadata !== undefined && (!data.metadata || typeof data.metadata !== 'object' || Array.isArray(data.metadata))) {
+      throw new Error('Skill metadata must be an object before assigning a group.')
+    }
+    const metadata = data.metadata ?? {}
+    if (group) metadata['dsh-skill-mcp/group'] = group
+    else delete metadata['dsh-skill-mcp/group']
+    if (Object.keys(metadata).length) data.metadata = metadata
+    else delete data.metadata
+  })
 }

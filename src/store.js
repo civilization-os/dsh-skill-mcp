@@ -14,7 +14,6 @@ const managerModule = new URL('./index.js', import.meta.url).href
 const resolvedModules = Object.fromEntries(Object.entries(moduleNames).map(([kind, name]) => [kind, import.meta.resolve(name)]))
 const isModule = (value, kind) => [moduleNames[kind], resolvedModules[kind], new URL('../src/index.ts', resolvedModules[kind]).href, new URL('../lib/index.js', resolvedModules[kind]).href].includes(value)
 const idPattern = /^[A-Za-z0-9_-]{1,32}$/
-const groupField = 'extensionManagerGroup'
 const blockStart = '# dsh-skill-mcp:managed-start'
 const blockEnd = '# dsh-skill-mcp:managed-end'
 
@@ -154,7 +153,7 @@ export class ExtensionStore {
     } }, signal, expectedRevision)
   }
 
-  async addSkillPath(directory, group, signal, expectedRevision) {
+  async addSkillPath(directory, signal, expectedRevision) {
     const normalizedDirectory = normalizeWindowsPath(directory)
     if (!isAbsolute(normalizedDirectory) || !(await stat(normalizedDirectory)).isDirectory()) throw new Error('Skill root must be an existing absolute directory containing skill bundles.')
     return this.update(rows => {
@@ -164,21 +163,9 @@ export class ExtensionStore {
       const stem = basename(normalizedDirectory).replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24) || 'skills'
       let id = stem
       for (let suffix = 2; rows.some(row => row.id === id); suffix++) id = `${stem.slice(0, 27)}-${suffix}`
-      const normalizedGroup = typeof group === 'string' ? group.trim().slice(0, 64) : ''
       rows.push({ id, name: moduleNames.skill, disabled: true, config: {
         providerName: `managed-${id}`, includeDefaultRoots: false, customSkillDirs: [normalizedDirectory],
-        ...(normalizedGroup ? { [groupField]: normalizedGroup } : {}),
       } })
-    }, signal, expectedRevision)
-  }
-
-  async setSkillGroup(id, group, signal, expectedRevision) {
-    return this.update(rows => {
-      const row = rows.find(row => row.id === id && !row.config.serverName)
-      if (!row) throw new Error('Unknown Skill path.')
-      const normalized = group.trim().slice(0, 64)
-      if (normalized) row.config[groupField] = normalized
-      else delete row.config[groupField]
     }, signal, expectedRevision)
   }
 

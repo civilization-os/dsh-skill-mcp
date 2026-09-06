@@ -23,7 +23,7 @@ async function fixture(t) {
 test('settings writes reject stale revisions while retaining the newer record', async t => {
   const { store, call, directory } = await fixture(t)
   const { value } = await call('list', {})
-  const added = await call('add-skill', { directory, group: '', revision: value.revision })
+  const added = await call('add-skill', { directory, revision: value.revision })
   assert.equal(added.ok, true)
   const pathId = added.value.sources[0].id
   const stale = await call('enable', { id: pathId, enabled: true, revision: value.revision })
@@ -33,22 +33,18 @@ test('settings writes reject stale revisions while retaining the newer record', 
   assert.equal(enabled.value.extensions[0].enabled, true)
 })
 
-test('Skill paths get internal ids and persist user groups', async t => {
+test('Skill paths get internal ids and reject duplicate directories', async t => {
   const { call, directory } = await fixture(t)
   const first = join(directory, 'work-skills')
   const second = join(directory, 'personal-skills')
   await mkdir(first)
   await mkdir(second)
   const listed = await call('list', {})
-  const added = await call('add-skill', { directory: first, group: '工作', revision: listed.value.revision })
+  const added = await call('add-skill', { directory: first, revision: listed.value.revision })
   assert.equal(added.ok, true)
   assert.equal(added.value.sources[0].id, 'work-skills')
-  assert.equal(added.value.sources[0].group, '工作')
-  const grouped = await call('set-skill-group', { id: 'work-skills', group: '开发', revision: added.value.revision })
-  assert.equal(grouped.value.sources[0].group, '开发')
-  const secondAdded = await call('add-skill', { directory: second, group: '开发', revision: grouped.value.revision })
-  assert.deepEqual(secondAdded.value.sources.map(source => source.group), ['开发', '开发'])
-  const duplicate = await call('add-skill', { directory: first, group: '', revision: secondAdded.value.revision })
+  const secondAdded = await call('add-skill', { directory: second, revision: added.value.revision })
+  const duplicate = await call('add-skill', { directory: first, revision: secondAdded.value.revision })
   assert.equal(duplicate.ok, false)
 })
 
@@ -98,6 +94,13 @@ test('Skill inventory diagnoses files and authoring updates invocation flags', a
   })
   assert.equal(changed.value.skills.find(item => item.name === 'new-skill').modelInvocable, false)
   assert.match(await readFile(join(root, 'new-skill', 'SKILL.md'), 'utf8'), /disable-model-invocation: true/)
+  const changedSkill = changed.value.skills.find(item => item.name === 'new-skill')
+  const grouped = await call('set-skill-group', {
+    sourceId: 'library', relativePath: changedSkill.relativePath, skillRevision: changedSkill.revision,
+    group: '开发', revision: changed.value.revision,
+  })
+  assert.equal(grouped.value.skills.find(item => item.name === 'new-skill').group, '开发')
+  assert.match(await readFile(join(root, 'new-skill', 'SKILL.md'), 'utf8'), /dsh-skill-mcp\/group: 开发/)
 })
 
 test('a slower refresh cannot replace the result of a later save', async () => {
