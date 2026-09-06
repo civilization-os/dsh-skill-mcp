@@ -6,7 +6,14 @@
 
 ## 通过 dsh 安装
 
-需要已安装 DeepSeek Harness、Node.js 22.19+ 和 pnpm。把插件安装到 `web` profile：
+需要已安装 DeepSeek Harness、Node.js 22.19+ 和 pnpm。npm 包名在 registry 中全局唯一，不需要附加 GitHub 用户名或组织名。把插件安装到 `web` profile 并启动：
+
+```sh
+dsh plugin --profile web add deepseek-harness-skill-mcp
+dsh web
+```
+
+也可以直接从 GitHub 安装；此时包地址必须包含组织名：
 
 ```sh
 dsh plugin --profile web add github:civilization-os/dsh-skill-mcp
@@ -18,23 +25,11 @@ Git 安装可以锁定到具体 commit，避免以后安装到未经确认的新
 dsh plugin --profile web add github:civilization-os/dsh-skill-mcp#<commit-sha>
 ```
 
-也可以从 npm 安装正式版本：
-
-```sh
-dsh plugin --profile web add deepseek-harness-skill-mcp
-```
-
-安装完成后重启 Web profile：
-
-```sh
-dsh --profile web
-```
-
 如果从 DeepSeek Harness 源码仓库运行 CLI，请把上面的 `dsh` 换成 `pnpm dsh`，并在 Harness 仓库根目录执行，例如：
 
 ```sh
 pnpm dsh plugin --profile web add github:civilization-os/dsh-skill-mcp
-pnpm dsh --profile web
+pnpm dsh web
 ```
 
 更新或卸载：
