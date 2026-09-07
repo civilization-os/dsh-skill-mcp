@@ -1,6 +1,6 @@
 {
-  "name": "deepseek-harness-skill-mcp",
-  "version": "0.1.2",
+  "name": "@civilization/deepseek-harness-skill-mcp",
+  "version": "0.1.3",
   "description": "Skill path and MCP server management for DeepSeek Harness Web",
   "license": "Apache-2.0",
   "repository": {
@@ -51,20 +51,20 @@
   "dependencies": {
     "@deepseek-ai/dsh-mcp-client": "0.1.2-rc.1",
     "@deepseek-ai/dsh-skill-filesystem": "0.1.2-rc.1",
-    "@deepseek-ai/dsh-tools": "0.1.2-rc.1",
     "@deepseek-ai/schemastery": "3.18.2",
     "yaml": "^2.9.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": ">=4.0.2"
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-tools": "^0.1.2-rc.1"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.2",
     "@deepseek-ai/dsh-skill": "0.1.2-rc.1",
     "@deepseek-ai/dsh-system-prompt": "0.1.2-rc.1",
+    "@deepseek-ai/dsh-tools": "0.1.2-rc.1",
     "@modelcontextprotocol/sdk": "1.29.0",
     "esbuild": "^0.28.2",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react": "^19.2.8"
   }
 }

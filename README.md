@@ -9,7 +9,7 @@
 需要已安装 DeepSeek Harness、Node.js 22.19+ 和 pnpm。npm 包名在 registry 中全局唯一，不需要附加 GitHub 用户名或组织名。把插件安装到 `web` profile 并启动：
 
 ```sh
-dsh plugin --profile web add deepseek-harness-skill-mcp
+dsh plugin --profile web add @civilization/deepseek-harness-skill-mcp
 dsh web
 ```
 
@@ -35,8 +35,8 @@ pnpm dsh web
 更新或卸载：
 
 ```sh
-dsh plugin --profile web update deepseek-harness-skill-mcp
-dsh plugin --profile web remove deepseek-harness-skill-mcp
+dsh plugin --profile web update @civilization/deepseek-harness-skill-mcp
+dsh plugin --profile web remove @civilization/deepseek-harness-skill-mcp
 ```
 
 Bundle 的新增、更新和移除都需要重启正在运行的 Web profile。Skill 与 MCP 配置保存在用户自己的 profile patch 中；卸载插件不会自动删除这些配置行。
