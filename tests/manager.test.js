@@ -55,7 +55,17 @@ test('MCP transport validation rejects credential-bearing URLs and malformed con
   await store.addMcp('remote', { transport: 'streamable-http', url: 'http://localhost:9000/mcp' })
   const rows = await store.read()
   assert.equal(rows.find(row => row.id === 'windows').config.command, String.raw`C:\Tools\mcp.cmd`)
+  assert.equal(rows.every(row => row.config.failOnStartupError === false), true)
   assert.deepEqual(rows.map(row => row.disabled), [true, true, true])
+})
+
+test('strict MCP startup settings migrate to non-fatal startup', async t => {
+  const { path, store } = await fixture(t)
+  await store.addMcp('offline', { transport: 'streamable-http', url: 'http://127.0.0.1:1/mcp' })
+  const strict = (await readFile(path, 'utf8')).replace('failOnStartupError: false', 'failOnStartupError: true')
+  await writeFile(path, strict)
+  await store.ensureNonFatalMcpStartup()
+  assert.equal((await store.read())[0].config.failOnStartupError, false)
 })
 
 test('an existing writer lock refuses a competing write without changing the patch', async t => {
@@ -186,4 +196,27 @@ test('saved HTTP MCP configuration discovers tools and removes them on unload', 
   assert.match(JSON.stringify(result.content), /pong/)
   await fiber.dispose()
   assert.equal(ctx.tools.schemas().some(tool => tool.name === 'mcp__probe__ping'), false)
+})
+
+test('an unavailable HTTP MCP server does not reject plugin startup', { timeout: 15000 }, async t => {
+  const { store } = await fixture(t)
+  const server = createServer((_request, response) => response.writeHead(503).end())
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  t.after(() => new Promise((resolve, reject) => {
+    server.close(error => error ? reject(error) : resolve())
+    server.closeAllConnections()
+  }))
+  await store.addMcp('offline', {
+    transport: 'streamable-http', url: `http://127.0.0.1:${server.address().port}/mcp`, reconnect: { enabled: false },
+  })
+  await store.setEnabled('offline', true)
+  const [row] = await store.read()
+  const ctx = new Context()
+  t.after(() => ctx.fiber.dispose())
+  await ctx.plugin(SystemPrompt)
+  await ctx.plugin(Tools)
+  const fiber = ctx.plugin(McpClient, row.config)
+  await assert.doesNotReject(async () => { await fiber })
+  assert.equal(ctx.tools.schemas().some(tool => tool.name.startsWith('mcp__offline__')), false)
 })

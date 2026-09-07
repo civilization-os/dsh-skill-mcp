@@ -20,7 +20,7 @@ const output = {
 export async function apply(ctx, config) {
   const home = process.env.DSH_HOME || join(homedir(), '.dsh')
   const store = new ExtensionStore(config.patchPath || join(home, 'profiles', 'web', 'cordis.patch.yml'))
-  await store.read()
+  await store.ensureNonFatalMcpStartup()
   ctx.inject(['connection'], web => {
     web.connection.rpc.handle('/extensions', createWebHandler(store, ctx))
   })

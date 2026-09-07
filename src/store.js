@@ -113,6 +113,17 @@ export class ExtensionStore {
     return markedRows(content)?.rows ?? legacyPatch(content)?.managed ?? []
   }
 
+  /** Migrate managed MCP rows so an unavailable server cannot reject profile startup. */
+  async ensureNonFatalMcpStartup() {
+    const rows = await this.read()
+    if (!rows.some(row => row.config.serverName && row.config.failOnStartupError !== false)) return
+    await this.update(current => {
+      for (const row of current) {
+        if (row.config.serverName) row.config.failOnStartupError = false
+      }
+    })
+  }
+
   async update(change, signal, expectedRevision) {
     signal?.throwIfAborted()
     const lockPath = `${this.path}.lock`
@@ -178,7 +189,7 @@ export class ExtensionStore {
       command: typeof input.command === 'string' ? normalizeWindowsPath(input.command) : input.command,
       cwd: typeof input.cwd === 'string' && input.cwd ? normalizeWindowsPath(input.cwd) : input.cwd,
     } : input
-    const config = McpConfig({ ...normalized, serverName: id, failOnStartupError: true })
+    const config = McpConfig({ ...normalized, serverName: id, failOnStartupError: false })
     if (config.transport === 'streamable-http') {
       const url = new URL(config.url)
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('Use an HTTP(S) endpoint without credentials, query or fragment.')
