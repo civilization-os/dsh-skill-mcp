@@ -87,6 +87,7 @@ async function inspectSkill(source, path, format) {
       modelInvocable: parsed.modelInvocable,
       userInvocable: parsed.userInvocable,
       group: parsed.group,
+      content: parsed.body,
       valid: parsed.issues.length === 0,
       issues: parsed.issues,
       resources,
@@ -98,7 +99,7 @@ async function inspectSkill(source, path, format) {
     return {
       sourceId: source.id, sourceEnabled: source.enabled, relativePath, format,
       name: basename(path, extname(path)), description: '', whenToUse: '',
-      modelInvocable: false, userInvocable: false, group: '', valid: false, issues: [issue], resources: [], revision: '',
+      modelInvocable: false, userInvocable: false, group: '', content: '', valid: false, issues: [issue], resources: [], revision: '',
     }
   }
 }
@@ -166,7 +167,7 @@ export async function createSkill(rows, input) {
   }
 }
 
-async function updateSkillFrontmatter(rows, input, update) {
+async function updateSkillFrontmatter(rows, input, update, body) {
   const root = skillSource(rows, input.sourceId)
   const inventory = await inspectSkills(rows)
   const skill = inventory.skills.find(item => item.sourceId === input.sourceId && item.relativePath === input.relativePath)
@@ -180,7 +181,7 @@ async function updateSkillFrontmatter(rows, input, update) {
   const parsed = parseFrontmatter(content)
   update(parsed.data)
   const temporary = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`)
-  await writeFile(temporary, `---\n${stringify(parsed.data)}---\n${parsed.body}`)
+  await writeFile(temporary, `---\n${stringify(parsed.data)}---\n${body === undefined ? parsed.body : body}`)
   await rename(temporary, path)
 }
 
@@ -207,4 +208,34 @@ export async function setSkillGroup(rows, input) {
     if (Object.keys(metadata).length) data.metadata = metadata
     else delete data.metadata
   })
+}
+
+/** Update the editable frontmatter and instruction body of one Skill. */
+export async function updateSkill(rows, input) {
+  if (!input.description.trim()) throw new Error('Skill description is required.')
+  await updateSkillFrontmatter(rows, input, data => {
+    data.description = input.description.trim()
+    if (input.whenToUse.trim()) data.whenToUse = input.whenToUse.trim()
+    else delete data.whenToUse
+    if (input.modelInvocable) delete data['disable-model-invocation']
+    else data['disable-model-invocation'] = true
+    if (input.userInvocable) delete data['user-invocable']
+    else data['user-invocable'] = false
+  }, input.content)
+}
+
+/** Delete one exact inspected Skill; bundle deletion removes its complete directory. */
+export async function deleteSkill(rows, input) {
+  const root = skillSource(rows, input.sourceId)
+  const inventory = await inspectSkills(rows)
+  const skill = inventory.skills.find(item => item.sourceId === input.sourceId && item.relativePath === input.relativePath)
+  if (!skill?.valid) throw new Error('Unknown or invalid Skill.')
+  const path = resolve(root, input.relativePath)
+  const child = relative(resolve(root), path)
+  if (!child || child.startsWith('..') || resolve(root, child) !== path) throw new Error('Skill path escapes its source.')
+  const content = await readFile(path, 'utf8')
+  if (createHash('sha256').update(content).digest('hex') !== input.skillRevision) {
+    throw Object.assign(new Error('Skill changed. Refresh before deleting.'), { code: 'CONFLICT' })
+  }
+  await rm(skill.format === 'bundle' ? dirname(path) : path, { recursive: skill.format === 'bundle' })
 }

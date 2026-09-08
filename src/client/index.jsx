@@ -10,8 +10,13 @@ const settingsPollIntervalMs = 3000
 
 export function apply(ctx) {
   const controller = new ExtensionsController((endpoint, args, signal) => ctx.connection.rpc.call('/extensions', endpoint, args, signal))
+  let catalogTimer
+  const refreshSlashCatalog = () => {
+    window.clearTimeout(catalogTimer)
+    catalogTimer = window.setTimeout(() => ctx.emit('connection/reset'), 350)
+  }
   ctx.effect(() => ctx.locale.register(namespace, { zh, en }))
-  ctx.effect(() => () => controller.dispose())
+  ctx.effect(() => () => { window.clearTimeout(catalogTimer); controller.dispose() })
   ctx.effect(() => {
     const style = document.createElement('style')
     style.textContent = css
@@ -20,7 +25,12 @@ export function apply(ctx) {
   })
   ctx.on('connection/reset', () => { void controller.request('list') })
   const t = ctx.locale.bind(namespace)
-  const face = { hooks: { manager: controller }, request: (endpoint, args, options) => controller.request(endpoint, args, options) }
+  const request = async (endpoint, args, options) => {
+    const ok = await controller.request(endpoint, args, options)
+    if (ok && (endpoint !== 'list' || options?.silent !== true)) refreshSlashCatalog()
+    return ok
+  }
+  const face = { hooks: { manager: controller }, request }
   // The two sections share one controller and managed patch; each kind gets its own settings page.
   const section = (id, kind) => ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section', id, order: kind === 'skill' ? 16 : 17,
@@ -96,18 +106,26 @@ export function SkillSection({ t, useManager, request }) {
 }
 
 function SkillSources({ sources, skills, t, busy, request }) {
+  const [editing, setEditing] = useState('')
   return <details className="dsh-ext-card dsh-skill-source-manager"><summary>{t('skillSources')} <span className="dsh-ext-count">{sources.length}</span></summary>
     <ul>{sources.map(source => <li key={source.id}><div className="dsh-skill-source-title"><span className={`dsh-ext-status ${source.enabled ? 'dsh-ext-status-available' : ''}`} aria-hidden="true" />
       <div><strong>{source.id} <span className="dsh-ext-count">{skills.filter(skill => skill.sourceId === source.id).length}</span></strong><code>{source.location}</code>
         {source.issue && <small>{t(`issue_${source.issue}`)}</small>}</div></div>
-      <button type="button" role="switch" aria-checked={source.enabled} disabled={busy}
-        onClick={() => request('enable', { id: source.id, enabled: !source.enabled })}>{t(source.enabled ? 'disable' : 'enable')}</button></li>)}</ul>
+      <div className="dsh-ext-row-actions"><button type="button" disabled={busy} onClick={() => setEditing(editing === source.id ? '' : source.id)}>{t('edit')}</button>
+        <button type="button" role="switch" aria-checked={source.enabled} disabled={busy}
+          onClick={() => request('enable', { id: source.id, enabled: !source.enabled })}>{t(source.enabled ? 'disable' : 'enable')}</button>
+        <button className="dsh-ext-danger" type="button" disabled={busy} onClick={async () => {
+          if (window.confirm(t('deleteExtensionConfirm')) && await request('delete-extension', { id: source.id })) setEditing('')
+        }}>{t('delete')}</button></div>
+      {editing === source.id && <SkillSourceForm source={source} t={t} busy={busy} onCancel={() => setEditing('')} onSave={async args => {
+        if (await request('update-skill-source', args)) setEditing('')
+      }} />}</li>)}</ul>
   </details>
 }
 
 export function McpSection({ t, useManager, request }) {
   const state = useManager(value => value)
-  const [form, setForm] = useState(false)
+  const [form, setForm] = useState('')
   const busy = state.loading || state.saving
   const rows = state.extensions.filter(row => row.kind === 'mcp')
   useLiveRefresh(request)
@@ -117,13 +135,20 @@ export function McpSection({ t, useManager, request }) {
     <PageState state={state} t={t} />
     <section className="dsh-ext-card">
       <header><h3>{t('mcp')} <span className="dsh-ext-count">{rows.length}</span></h3>
-        <button type="button" disabled={busy || !state.revision} onClick={() => setForm(true)}>{t('addMcp')}</button></header>
+        <button type="button" disabled={busy || !state.revision} onClick={() => setForm('new')}>{t('addMcp')}</button></header>
       {rows.length === 0 && <div className="dsh-ext-empty"><strong>{t('emptyMcp')}</strong><p>{t('emptyMcpHint')}</p></div>}
-      <ul>{rows.map(row => <li key={row.id}><div className="dsh-ext-details"><strong>{row.id}</strong><code>{row.location}</code><McpRuntime row={row} t={t} /></div>
-        <button type="button" role="switch" aria-checked={row.enabled} aria-label={`${t(row.enabled ? 'disable' : 'enable')} ${row.id}`} disabled={busy}
-          onClick={() => request('enable', { id: row.id, enabled: !row.enabled })}>{t(row.enabled ? 'disable' : 'enable')}</button></li>)}</ul>
-      {form && <AddForm kind="mcp" t={t} busy={busy} onCancel={() => setForm(false)} onSave={async args => {
-        if (await request('add-mcp', args)) setForm(false)
+      <ul>{rows.map(row => <li key={row.id}><div className="dsh-ext-details"><strong>{row.id}</strong><code>{row.location}</code><McpRuntime row={row} t={t} />
+        {form === row.id && <McpForm row={row} t={t} busy={busy} onCancel={() => setForm('')} onSave={async args => {
+          if (await request('update-mcp', args)) setForm('')
+        }} />}</div>
+        <div className="dsh-ext-row-actions"><button type="button" disabled={busy} onClick={() => setForm(form === row.id ? '' : row.id)}>{t('edit')}</button>
+          <button type="button" role="switch" aria-checked={row.enabled} aria-label={`${t(row.enabled ? 'disable' : 'enable')} ${row.id}`} disabled={busy}
+            onClick={() => request('enable', { id: row.id, enabled: !row.enabled })}>{t(row.enabled ? 'disable' : 'enable')}</button>
+          <button className="dsh-ext-danger" type="button" disabled={busy} onClick={async () => {
+            if (window.confirm(t('deleteExtensionConfirm')) && await request('delete-extension', { id: row.id })) setForm('')
+          }}>{t('delete')}</button></div></li>)}</ul>
+      {form === 'new' && <McpForm t={t} busy={busy} onCancel={() => setForm('')} onSave={async args => {
+        if (await request('add-mcp', args)) setForm('')
       }} />}
     </section>
     <p className="dsh-ext-footnote">{t('mcpFootnote')}</p>
@@ -162,6 +187,7 @@ function skillState(skill) {
 }
 
 function SkillRow({ skill, source, groups, t, busy, request }) {
+  const [editing, setEditing] = useState(false)
   const state = skillState(skill)
   const invocation = skill.modelInvocable && skill.userInvocable ? 'both'
     : skill.modelInvocable ? 'modelOnly' : skill.userInvocable ? 'manualOnly' : 'none'
@@ -187,8 +213,38 @@ function SkillRow({ skill, source, groups, t, busy, request }) {
       <div><strong>{t('resources')}</strong>{skill.resources.length
         ? <ul className="dsh-skill-resources">{skill.resources.map(path => <li key={path}><code>{path}</code></li>)}</ul>
         : <p>{t('noResources')}</p>}</div>
+      <div className="dsh-ext-row-actions"><button type="button" disabled={busy || !skill.valid} onClick={() => setEditing(!editing)}>{t('edit')}</button>
+        <button className="dsh-ext-danger" type="button" disabled={busy || !skill.valid} onClick={() => {
+          if (window.confirm(t('deleteSkillConfirm'))) void request('delete-skill', {
+            sourceId: skill.sourceId, relativePath: skill.relativePath, skillRevision: skill.revision,
+          })
+        }}>{t('delete')}</button></div>
     </div></details>
+    {editing && <SkillEditForm skill={skill} t={t} busy={busy} onCancel={() => setEditing(false)} onSave={async args => {
+      if (await request('update-skill', args)) setEditing(false)
+    }} />}
   </div></li>
+}
+
+function SkillEditForm({ skill, t, busy, onSave, onCancel }) {
+  const prefix = useId()
+  return <form className="dsh-skill-edit-form" onSubmit={event => {
+    event.preventDefault()
+    const data = new FormData(event.currentTarget)
+    void onSave({
+      sourceId: skill.sourceId, relativePath: skill.relativePath, skillRevision: skill.revision,
+      description: data.get('description'), whenToUse: data.get('whenToUse'), content: data.get('content'),
+      modelInvocable: data.has('modelInvocable'), userInvocable: data.has('userInvocable'),
+    })
+  }}><fieldset disabled={busy}>
+    <label className="dsh-ext-span" htmlFor={`${prefix}-description`}>{t('description')}<textarea id={`${prefix}-description`} name="description" rows={3} required defaultValue={skill.description} /></label>
+    <label className="dsh-ext-span" htmlFor={`${prefix}-whenToUse`}>{t('whenToUse')}<textarea id={`${prefix}-whenToUse`} name="whenToUse" rows={2} defaultValue={skill.whenToUse} /></label>
+    <label className="dsh-ext-span" htmlFor={`${prefix}-content`}>{t('instructions')}<textarea id={`${prefix}-content`} name="content" rows={10} defaultValue={skill.content} /></label>
+    <div className="dsh-skill-create-flags"><span>{t('invocation')}</span>
+      <label><input type="checkbox" name="modelInvocable" defaultChecked={skill.modelInvocable} /> {t('modelInvocable')}</label>
+      <label><input type="checkbox" name="userInvocable" defaultChecked={skill.userInvocable} /> {t('userInvocable')}</label></div>
+    <div className="dsh-ext-actions"><button type="button" onClick={onCancel}>{t('cancel')}</button><button type="submit">{t(busy ? 'saving' : 'saveChanges')}</button></div>
+  </fieldset></form>
 }
 
 function SkillGroupEditor({ skill, groups, t, busy, request }) {
@@ -240,6 +296,40 @@ function NewSkillForm({ sources, t, busy, onSave, onCancel }) {
       <label><input type="checkbox" name="modelInvocable" defaultChecked /> {t('modelInvocable')}</label>
       <label><input type="checkbox" name="userInvocable" defaultChecked /> {t('userInvocable')}</label></div>
     <div className="dsh-ext-actions"><button type="button" onClick={onCancel}>{t('cancel')}</button><button type="submit">{t(busy ? 'saving' : 'create')}</button></div>
+  </fieldset></form>
+}
+
+function SkillSourceForm({ source, t, busy, onSave, onCancel }) {
+  const prefix = useId()
+  return <form className="dsh-ext-inline-form" onSubmit={event => {
+    event.preventDefault()
+    void onSave({ id: source.id, directory: new FormData(event.currentTarget).get('directory') })
+  }}><fieldset disabled={busy}><label className="dsh-ext-span" htmlFor={`${prefix}-directory`}>{t('directory')}
+    <input id={`${prefix}-directory`} name="directory" required autoComplete="off" defaultValue={source.location} /></label>
+    <div className="dsh-ext-actions"><button type="button" onClick={onCancel}>{t('cancel')}</button><button type="submit">{t(busy ? 'saving' : 'saveChanges')}</button></div>
+  </fieldset></form>
+}
+
+function McpForm({ row, t, busy, onSave, onCancel }) {
+  const prefix = useId()
+  const initial = row?.configuration ?? { transport: 'stdio', command: '', args: [], cwd: '' }
+  const [transport, setTransport] = useState(initial.transport)
+  const field = (name, required = true, multiline = false, value = '') => <label htmlFor={`${prefix}-${name}`}>{t(name)}{multiline
+    ? <textarea id={`${prefix}-${name}`} name={name} rows={3} defaultValue={value} />
+    : <input id={`${prefix}-${name}`} name={name} required={required} autoComplete="off" defaultValue={value} {...(name === 'id' ? { pattern: '[A-Za-z0-9_\\-]{1,32}', maxLength: 32 } : {})} />}</label>
+  return <form className={row ? 'dsh-ext-inline-form' : 'dsh-ext-form'} onSubmit={event => {
+    event.preventDefault()
+    const data = Object.fromEntries(new FormData(event.currentTarget))
+    const configuration = JSON.stringify(transport === 'stdio'
+      ? { transport, command: data.command, args: data.args.split(/\r?\n/).filter(Boolean), cwd: data.cwd }
+      : { transport, url: data.url })
+    void onSave({ id: row?.id ?? data.id, configuration })
+  }}><fieldset disabled={busy}>{!row && field('id')}
+    <label htmlFor={`${prefix}-transport`}>{t('transport')}<select id={`${prefix}-transport`} value={transport} onChange={event => setTransport(event.target.value)}>
+      <option value="stdio">{t('stdio')}</option><option value="streamable-http">{t('http')}</option></select></label>
+    {transport === 'stdio' ? <>{field('command', true, false, initial.command)}{field('args', false, true, (initial.args ?? []).join('\n'))}{field('cwd', false, false, initial.cwd)}</> : field('url', true, false, initial.url)}
+    <p>{t('secret')}</p>
+    <div className="dsh-ext-actions"><button type="button" onClick={onCancel}>{t('cancel')}</button><button type="submit">{t(busy ? 'saving' : row ? 'saveChanges' : 'save')}</button></div>
   </fieldset></form>
 }
 

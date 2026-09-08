@@ -45,6 +45,24 @@ test('invalid additions and missing ids preserve existing configuration', async 
   assert.equal(await readFile(path, 'utf8'), original)
 })
 
+test('managed sources and MCP servers can be edited and removed', async t => {
+  const { directory, store } = await fixture(t)
+  const other = join(directory, 'other')
+  await mkdir(other)
+  await store.addSkill('notes', directory)
+  await store.updateSkillSource('notes', other)
+  assert.equal((await store.read())[0].config.customSkillDirs[0], other)
+  await store.addMcp('demo', { transport: 'stdio', command: 'node', args: ['old.js'] })
+  await store.setEnabled('demo', true)
+  await store.updateMcp('demo', { transport: 'streamable-http', url: 'http://localhost:9000/mcp' })
+  const mcp = (await store.read()).find(row => row.id === 'demo')
+  assert.equal(mcp.disabled, false)
+  assert.equal(mcp.config.transport, 'streamable-http')
+  await store.remove('notes')
+  assert.deepEqual((await store.read()).map(row => row.id), ['demo'])
+  await assert.rejects(store.remove('missing'), /Unknown/)
+})
+
 test('MCP transport validation rejects credential-bearing URLs and malformed config', async t => {
   const { store } = await fixture(t)
   await assert.rejects(store.addMcp('bad', { transport: 'other' }))

@@ -101,6 +101,39 @@ test('Skill inventory diagnoses files and authoring updates invocation flags', a
   })
   assert.equal(grouped.value.skills.find(item => item.name === 'new-skill').group, '开发')
   assert.match(await readFile(join(root, 'new-skill', 'SKILL.md'), 'utf8'), /dsh-skill-mcp\/group: 开发/)
+
+  const groupedSkill = grouped.value.skills.find(item => item.name === 'new-skill')
+  const edited = await call('update-skill', {
+    sourceId: 'library', relativePath: groupedSkill.relativePath, skillRevision: groupedSkill.revision,
+    description: 'Edited skill', whenToUse: '', content: '\n# Edited\n\nNew instructions.\n',
+    modelInvocable: true, userInvocable: true, revision: grouped.value.revision,
+  })
+  assert.equal(edited.ok, true)
+  assert.match(await readFile(join(root, 'new-skill', 'SKILL.md'), 'utf8'), /New instructions\./)
+  const editedSkill = edited.value.skills.find(item => item.name === 'new-skill')
+  const deleted = await call('delete-skill', {
+    sourceId: 'library', relativePath: editedSkill.relativePath, skillRevision: editedSkill.revision,
+    revision: edited.value.revision,
+  })
+  assert.equal(deleted.ok, true)
+  await assert.rejects(stat(join(root, 'new-skill')), { code: 'ENOENT' })
+})
+
+test('web endpoints edit and remove MCP configurations without changing enabled state', async t => {
+  const { call, store } = await fixture(t)
+  await store.addMcp('demo', { transport: 'stdio', command: 'node', args: ['old.js'] })
+  await store.setEnabled('demo', true)
+  const listed = await call('list', {})
+  assert.deepEqual(listed.value.extensions[0].configuration.args, ['old.js'])
+  const edited = await call('update-mcp', {
+    id: 'demo', configuration: JSON.stringify({ transport: 'stdio', command: 'node', args: ['new.js'] }), revision: listed.value.revision,
+  })
+  assert.equal(edited.ok, true)
+  assert.equal(edited.value.extensions[0].enabled, true)
+  assert.deepEqual(edited.value.extensions[0].configuration.args, ['new.js'])
+  const removed = await call('delete-extension', { id: 'demo', revision: edited.value.revision })
+  assert.equal(removed.ok, true)
+  assert.deepEqual(removed.value.extensions, [])
 })
 
 test('a slower refresh cannot replace the result of a later save', async () => {

@@ -57,15 +57,17 @@ skills/
 
 Skill 页面支持：
 
-- 添加、启用和禁用多个 Skill 路径
+- 添加、编辑路径、启用、禁用和移除多个 Skill 来源；移除来源不会删除目录中的文件
 - 用独立的来源、用户分组和状态条件筛选技能
 - 为单个 Skill 设置用户分组；分组保存在对应 `SKILL.md` 的 `metadata` 中
 - 搜索、数量统计、frontmatter 格式诊断和同名覆盖提示
 - 查看 `scripts`、`references`、`assets` 等资源文件
+- 编辑 Skill 描述、适用场景、指令正文和调用权限
+- 删除单个 Skill；目录型 Skill 会连同其资源目录一起删除，并在界面中二次确认
 - 控制模型自动选择和用户 `/name` 调用
 - 创建只有 `SKILL.md` 的最小目录，或包含标准资源目录的 Skill
 
-新路径默认禁用。启用后，Harness 的 Skill provider 扫描该路径中的技能。页面在前台时每 3 秒刷新一次。
+新路径默认禁用。启用后，Harness 的 Skill provider 扫描该路径中的技能。页面在前台时每 3 秒刷新一次。当前 Harness Web 会按会话缓存 `/` Skill 候选，但未把 Host 的 `skills/change` 转发给浏览器；本插件在管理操作成功或用户点击“刷新”后触发客户端目录缓存失效，使下一次打开 `/` 菜单重新读取 Skill 列表。直接在文件系统外部修改 Skill 时，在管理页点击一次“刷新”即可同步菜单。
 
 ## MCP 管理
 
@@ -94,7 +96,9 @@ HTTP 示例：
 }
 ```
 
-服务器卡片使用状态灯显示禁用、等待发现工具或工具可用，并可展开查看实际注册的工具列表。新服务器默认禁用；启用 stdio 服务器会在 Agent 沙箱之外执行所配置的程序。
+服务器卡片使用状态灯显示禁用、等待发现工具或工具可用，并可展开查看实际注册的工具列表。MCP 配置可以编辑或删除，编辑时保留服务器 id 与启用状态。新服务器默认禁用；启用 stdio 服务器会在 Agent 沙箱之外执行所配置的程序。
+
+MCP 工具是提供给模型的工具 schema，不是用户 `/` 命令，因此不会出现在 Skill 斜杠菜单中；它们的动态状态以 MCP 页面中的“工具列表”和 `extensions_inspect` 为准。
 
 当前版本不接受 `env`、认证 header、带凭据或 token 查询参数的 URL。请勿把密钥放进工具参数、MCP 地址或提交到仓库。
 
@@ -108,6 +112,9 @@ MCP 对端离线、命令启动失败或首次工具发现失败不会阻止 DSH
 | `extensions_add_skill` | 添加 Skill 路径；Agent 调用时显式指定内部 id |
 | `extensions_add_mcp` | 添加 stdio 或 HTTP MCP 配置 |
 | `extensions_set_enabled` | 启用或禁用受管配置 |
+| `extensions_update_skill` | 修改 Skill 来源路径 |
+| `extensions_update_mcp` | 替换 MCP 连接配置并保留 id 与启用状态 |
+| `extensions_remove` | 移除 Skill 来源或 MCP 配置；不会删除 Skill 来源目录 |
 | `extensions_inspect` | 查看当前 Agent 实际可见的 Skill 与 MCP 工具 |
 
 可以直接告诉 Agent：
@@ -136,7 +143,9 @@ pnpm run web
 
 ## 验证
 
-自动测试覆盖配置持久化、Skill 多路径与单技能用户分组、并发 revision、Skill 创建与调用权限、MCP 工具发现和卸载、轮询状态以及中英文词典一致性。测试不需要模型 API key。
+自动测试覆盖配置持久化、Skill 多路径、编辑和删除、单技能内容编辑与删除、用户分组、并发 revision、Skill 创建与调用权限、MCP 工具发现和卸载、轮询状态以及中英文词典一致性。测试不需要模型 API key。
+
+浏览器端 `/` 候选缓存失效兼容逻辑会使用公开的 `connection/reset` 客户端事件；自动测试验证 Host/RPC 和浏览器 bundle 构建，但没有在本仓库内启动完整 Harness Web 做端到端菜单点击验证。外部文件改动仍依赖 filesystem provider 先完成 watcher 失效，必要时可在变更后点击管理页“刷新”。
 
 ## 发布
 

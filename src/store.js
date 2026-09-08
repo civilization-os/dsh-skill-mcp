@@ -182,6 +182,11 @@ export class ExtensionStore {
 
   async addMcp(id, input, signal, expectedRevision) {
     validateId(id)
+    const config = this.normalizeMcp(id, input)
+    return this.add({ id, name: moduleNames.mcp, disabled: true, config }, signal, expectedRevision)
+  }
+
+  normalizeMcp(id, input) {
     // Authentication values belong in the host credential setup, not tool arguments or logs.
     if (input.env || input.headers) throw new Error('This version does not accept environment values or authentication headers.')
     const normalized = input.transport === 'stdio' ? {
@@ -194,7 +199,7 @@ export class ExtensionStore {
       const url = new URL(config.url)
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('Use an HTTP(S) endpoint without credentials, query or fragment.')
     } else if (!config.command.trim()) throw new Error('MCP command cannot be empty.')
-    return this.add({ id, name: moduleNames.mcp, disabled: true, config }, signal, expectedRevision)
+    return config
   }
 
   async add(row, signal, expectedRevision) {
@@ -209,6 +214,36 @@ export class ExtensionStore {
       const row = rows.find(row => row.id === id)
       if (!row) throw new Error('Unknown extension id.')
       row.disabled = !enabled
+    }, signal, expectedRevision)
+  }
+
+  async updateSkillSource(id, directory, signal, expectedRevision) {
+    const normalizedDirectory = normalizeWindowsPath(directory)
+    if (!isAbsolute(normalizedDirectory) || !(await stat(normalizedDirectory)).isDirectory()) throw new Error('Skill root must be an existing absolute directory containing skill bundles.')
+    return this.update(rows => {
+      const row = rows.find(row => row.id === id && !row.config.serverName)
+      if (!row) throw new Error('Unknown Skill source.')
+      if (rows.some(other => other !== row && !other.config.serverName && samePath(other.config.customSkillDirs[0], normalizedDirectory))) {
+        throw new Error('Skill path already exists.')
+      }
+      row.config.customSkillDirs = [normalizedDirectory]
+    }, signal, expectedRevision)
+  }
+
+  async updateMcp(id, input, signal, expectedRevision) {
+    const config = this.normalizeMcp(id, input)
+    return this.update(rows => {
+      const row = rows.find(row => row.id === id && row.config.serverName)
+      if (!row) throw new Error('Unknown MCP server.')
+      row.config = config
+    }, signal, expectedRevision)
+  }
+
+  async remove(id, signal, expectedRevision) {
+    return this.update(rows => {
+      const index = rows.findIndex(row => row.id === id)
+      if (index < 0) throw new Error('Unknown extension id.')
+      rows.splice(index, 1)
     }, signal, expectedRevision)
   }
 }
