@@ -1,6 +1,6 @@
 /** Skill and MCP settings sections registered through the public Slots and Connection services. */
-import { useEffect, useId, useState } from 'react'
-import { ExtensionsController } from './controller.js'
+import { useEffect, useId, useRef, useState } from 'react'
+import { ExtensionsController, refreshesSlashCatalog } from './controller.js'
 import { zh, en } from './locales.js'
 import css from './styles.css'
 
@@ -27,7 +27,7 @@ export function apply(ctx) {
   const t = ctx.locale.bind(namespace)
   const request = async (endpoint, args, options) => {
     const ok = await controller.request(endpoint, args, options)
-    if (ok && (endpoint !== 'list' || options?.silent !== true)) refreshSlashCatalog()
+    if (ok && refreshesSlashCatalog(endpoint, options)) refreshSlashCatalog()
     return ok
   }
   const face = { hooks: { manager: controller }, request }
@@ -70,7 +70,7 @@ export function SkillSection({ t, useManager, request }) {
     <header className="dsh-ext-heading"><div><h2>{t('navSkill')}</h2><p>{t('skillIntro')}</p></div>
       <div className="dsh-ext-heading-actions"><button type="button" disabled={busy || !state.revision} onClick={() => setForm('source')}>{t('add')}</button>
         <button type="button" disabled={busy || sources.length === 0} onClick={() => setForm('skill')}>{t('newSkill')}</button>
-        <button type="button" disabled={busy} onClick={() => request('list')}>{t('refresh')}</button></div></header>
+        <button type="button" disabled={busy} onClick={() => request('list', {}, { refreshSlashCatalog: true })}>{t('refresh')}</button></div></header>
     <PageState state={state} t={t} />
     <div className="dsh-skill-stats">
       {Object.entries(counts).map(([key, value]) => <div key={key}><strong>{value}</strong><span>{t(`stat_${key}`)}</span></div>)}
@@ -107,25 +107,29 @@ export function SkillSection({ t, useManager, request }) {
 
 function SkillSources({ sources, skills, t, busy, request }) {
   const [editing, setEditing] = useState('')
-  return <details className="dsh-ext-card dsh-skill-source-manager"><summary>{t('skillSources')} <span className="dsh-ext-count">{sources.length}</span></summary>
+  const [confirming, setConfirming] = useState('')
+  const target = sources.find(source => source.id === confirming)
+  return <><details className="dsh-ext-card dsh-skill-source-manager"><summary>{t('skillSources')} <span className="dsh-ext-count">{sources.length}</span></summary>
     <ul>{sources.map(source => <li key={source.id}><div className="dsh-skill-source-title"><span className={`dsh-ext-status ${source.enabled ? 'dsh-ext-status-available' : ''}`} aria-hidden="true" />
       <div><strong>{source.id} <span className="dsh-ext-count">{skills.filter(skill => skill.sourceId === source.id).length}</span></strong><code>{source.location}</code>
         {source.issue && <small>{t(`issue_${source.issue}`)}</small>}</div></div>
       <div className="dsh-ext-row-actions"><button type="button" disabled={busy} onClick={() => setEditing(editing === source.id ? '' : source.id)}>{t('edit')}</button>
         <button type="button" role="switch" aria-checked={source.enabled} disabled={busy}
-          onClick={() => request('enable', { id: source.id, enabled: !source.enabled })}>{t(source.enabled ? 'disable' : 'enable')}</button>
-        <button className="dsh-ext-danger" type="button" disabled={busy} onClick={async () => {
-          if (window.confirm(t('deleteExtensionConfirm')) && await request('delete-extension', { id: source.id })) setEditing('')
-        }}>{t('delete')}</button></div>
+          onClick={() => request('enable', { id: source.id, enabled: !source.enabled }, { refreshSlashCatalog: true })}>{t(source.enabled ? 'disable' : 'enable')}</button>
+        <button className="dsh-ext-danger" type="button" disabled={busy} onClick={() => setConfirming(source.id)}>{t('delete')}</button></div>
       {editing === source.id && <SkillSourceForm source={source} t={t} busy={busy} onCancel={() => setEditing('')} onSave={async args => {
         if (await request('update-skill-source', args)) setEditing('')
       }} />}</li>)}</ul>
-  </details>
+  </details>{target && <ConfirmDialog title={t('deleteExtensionTitle')} message={t('deleteExtensionConfirm').replace('{name}', target.id)}
+    t={t} busy={busy} onCancel={() => setConfirming('')} onConfirm={async () => {
+      if (await request('delete-extension', { id: target.id }, { refreshSlashCatalog: true })) { setEditing(''); setConfirming('') }
+    }} />}</>
 }
 
 export function McpSection({ t, useManager, request }) {
   const state = useManager(value => value)
   const [form, setForm] = useState('')
+  const [confirming, setConfirming] = useState('')
   const busy = state.loading || state.saving
   const rows = state.extensions.filter(row => row.kind === 'mcp')
   useLiveRefresh(request)
@@ -144,14 +148,16 @@ export function McpSection({ t, useManager, request }) {
         <div className="dsh-ext-row-actions"><button type="button" disabled={busy} onClick={() => setForm(form === row.id ? '' : row.id)}>{t('edit')}</button>
           <button type="button" role="switch" aria-checked={row.enabled} aria-label={`${t(row.enabled ? 'disable' : 'enable')} ${row.id}`} disabled={busy}
             onClick={() => request('enable', { id: row.id, enabled: !row.enabled })}>{t(row.enabled ? 'disable' : 'enable')}</button>
-          <button className="dsh-ext-danger" type="button" disabled={busy} onClick={async () => {
-            if (window.confirm(t('deleteExtensionConfirm')) && await request('delete-extension', { id: row.id })) setForm('')
-          }}>{t('delete')}</button></div></li>)}</ul>
+          <button className="dsh-ext-danger" type="button" disabled={busy} onClick={() => setConfirming(row.id)}>{t('delete')}</button></div></li>)}</ul>
       {form === 'new' && <McpForm t={t} busy={busy} onCancel={() => setForm('')} onSave={async args => {
         if (await request('add-mcp', args)) setForm('')
       }} />}
     </section>
     <p className="dsh-ext-footnote">{t('mcpFootnote')}</p>
+    {confirming && <ConfirmDialog title={t('deleteMcpTitle')} message={t('deleteMcpConfirm').replace('{name}', confirming)}
+      t={t} busy={busy} onCancel={() => setConfirming('')} onConfirm={async () => {
+        if (await request('delete-extension', { id: confirming })) { setForm(''); setConfirming('') }
+      }} />}
   </section>
 }
 
@@ -188,6 +194,7 @@ function skillState(skill) {
 
 function SkillRow({ skill, source, groups, t, busy, request }) {
   const [editing, setEditing] = useState(false)
+  const [confirming, setConfirming] = useState(false)
   const state = skillState(skill)
   const invocation = skill.modelInvocable && skill.userInvocable ? 'both'
     : skill.modelInvocable ? 'modelOnly' : skill.userInvocable ? 'manualOnly' : 'none'
@@ -214,16 +221,39 @@ function SkillRow({ skill, source, groups, t, busy, request }) {
         ? <ul className="dsh-skill-resources">{skill.resources.map(path => <li key={path}><code>{path}</code></li>)}</ul>
         : <p>{t('noResources')}</p>}</div>
       <div className="dsh-ext-row-actions"><button type="button" disabled={busy || !skill.valid} onClick={() => setEditing(!editing)}>{t('edit')}</button>
-        <button className="dsh-ext-danger" type="button" disabled={busy || !skill.valid} onClick={() => {
-          if (window.confirm(t('deleteSkillConfirm'))) void request('delete-skill', {
-            sourceId: skill.sourceId, relativePath: skill.relativePath, skillRevision: skill.revision,
-          })
-        }}>{t('delete')}</button></div>
+        <button className="dsh-ext-danger" type="button" disabled={busy || !skill.valid} onClick={() => setConfirming(true)}>{t('delete')}</button></div>
     </div></details>
     {editing && <SkillEditForm skill={skill} t={t} busy={busy} onCancel={() => setEditing(false)} onSave={async args => {
       if (await request('update-skill', args)) setEditing(false)
     }} />}
+    {confirming && <ConfirmDialog title={t('deleteSkillTitle')} message={t('deleteSkillConfirm').replace('{name}', skill.name)}
+      t={t} busy={busy} onCancel={() => setConfirming(false)} onConfirm={async () => {
+        await request('delete-skill', {
+          sourceId: skill.sourceId, relativePath: skill.relativePath, skillRevision: skill.revision,
+        })
+      }} />}
   </div></li>
+}
+
+function ConfirmDialog({ title, message, t, busy, onConfirm, onCancel }) {
+  const dialog = useRef(null)
+  const cancel = useRef(null)
+  const titleId = useId()
+  const messageId = useId()
+  useEffect(() => {
+    dialog.current.showModal()
+    cancel.current.focus()
+    return () => { if (dialog.current?.open) dialog.current.close() }
+  }, [])
+  return <dialog ref={dialog} className="dsh-confirm" aria-labelledby={titleId} aria-describedby={messageId}
+    onCancel={event => { event.preventDefault(); if (!busy) onCancel() }} onMouseDown={event => {
+      if (event.target === event.currentTarget && !busy) onCancel()
+    }}>
+    <div className="dsh-confirm-icon" aria-hidden="true">!</div>
+    <div className="dsh-confirm-copy"><h3 id={titleId}>{title}</h3><p id={messageId}>{message}</p></div>
+    <div className="dsh-confirm-actions"><button ref={cancel} type="button" disabled={busy} onClick={onCancel}>{t('cancel')}</button>
+      <button className="dsh-confirm-delete" type="button" disabled={busy} onClick={() => void onConfirm()}>{t(busy ? 'deleting' : 'confirmDelete')}</button></div>
+  </dialog>
 }
 
 function SkillEditForm({ skill, t, busy, onSave, onCancel }) {

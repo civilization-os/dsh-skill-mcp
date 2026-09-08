@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ExtensionStore } from '../src/store.js'
 import { createWebHandler } from '../src/web.js'
-import { ExtensionsController } from '../src/client/controller.js'
+import { ExtensionsController, refreshesSlashCatalog } from '../src/client/controller.js'
 import { zh, en } from '../src/client/locales.js'
 
 async function fixture(t) {
@@ -186,4 +186,21 @@ test('conflicts retain the displayed data and surface a localized recovery state
 
 test('Chinese and English settings dictionaries have identical keys', () => {
   assert.deepEqual(Object.keys(zh).sort(), Object.keys(en).sort())
+})
+
+test('destructive actions use the themed dialog instead of browser confirm', async () => {
+  const source = await readFile(new URL('../src/client/index.jsx', import.meta.url), 'utf8')
+  assert.doesNotMatch(source, /window\.confirm/)
+  assert.match(source, /<dialog/)
+  assert.match(source, /aria-labelledby/)
+})
+
+test('ordinary page reads and MCP writes do not reset the slash catalog', () => {
+  assert.equal(refreshesSlashCatalog('list'), false)
+  assert.equal(refreshesSlashCatalog('list', { silent: true }), false)
+  assert.equal(refreshesSlashCatalog('add-mcp'), false)
+  assert.equal(refreshesSlashCatalog('update-mcp'), false)
+  assert.equal(refreshesSlashCatalog('list', { refreshSlashCatalog: true }), true)
+  assert.equal(refreshesSlashCatalog('create-skill'), true)
+  assert.equal(refreshesSlashCatalog('delete-skill'), true)
 })

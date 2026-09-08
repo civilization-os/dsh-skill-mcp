@@ -1,4 +1,13 @@
 /** One observable per mounted plugin; drafts stay in the settings component. */
+const skillCatalogMutations = new Set([
+  'add-skill', 'update-skill-source', 'create-skill', 'update-skill', 'delete-skill', 'set-skill-invocation',
+])
+
+/** Keep broad connection cache invalidation away from ordinary page reads and MCP-only writes. */
+export function refreshesSlashCatalog(endpoint, options = {}) {
+  return options.refreshSlashCatalog === true || skillCatalogMutations.has(endpoint)
+}
+
 export class ExtensionsController {
   state = { extensions: [], sources: [], skills: [], revision: '', loading: false, saving: false, error: '', saved: false }
   listeners = new Set()
