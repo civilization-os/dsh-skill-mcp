@@ -17,6 +17,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: 3.18.2
         version: 3.18.2
+      '@modelcontextprotocol/sdk':
+        specifier: 1.29.0
+        version: 1.29.0(zod@4.5.4)
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
@@ -33,9 +36,6 @@ importers:
       '@deepseek-ai/dsh-tools':
         specifier: 0.1.2-rc.1
         version: 0.1.2-rc.1(de5e1ff2d608fbe22667925341ad1dfc)
-      '@modelcontextprotocol/sdk':
-        specifier: 1.29.0
-        version: 1.29.0(zod@4.5.4)
       esbuild:
         specifier: ^0.28.2
         version: 0.28.2

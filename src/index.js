@@ -35,7 +35,7 @@ export async function apply(ctx, config) {
   register('extensions_add_skill', 'Add an existing root containing skill directories. Added sources are disabled until explicitly enabled.', {
     id: string, directory: string,
   }, (args, exec) => store.addSkill(args.id, args.directory, exec.signal))
-  register('extensions_add_mcp', 'Add a disabled MCP server. configuration is JSON with transport and command/args/cwd or url. Do not supply secrets in arguments.', {
+  register('extensions_add_mcp', 'Add a disabled MCP server. configuration is JSON for stdio, Streamable HTTP, or legacy SSE transport. Do not supply secrets in arguments.', {
     id: string, configuration: string,
   }, (args, exec) => {
     const input = JSON.parse(args.configuration)

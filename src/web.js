@@ -43,7 +43,7 @@ export async function describeExtensions(store, ctx) {
       kind: row.config.serverName ? 'mcp' : 'skill',
       enabled: !row.disabled,
       location: row.config.transport === 'stdio' ? row.config.command
-        : row.config.transport === 'streamable-http' ? new URL(row.config.url).origin
+        : ['streamable-http', 'sse'].includes(row.config.transport) ? new URL(row.config.url).origin
           : row.config.customSkillDirs[0],
       transport: row.config.transport ?? '',
       configuration: row.config.serverName ? (row.config.transport === 'stdio'

@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import * as McpClient from '@deepseek-ai/dsh-mcp-client'
 import { Context } from '@deepseek-ai/cordis'
@@ -14,6 +15,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Skills from '@deepseek-ai/dsh-skill'
 import * as FilesystemSkills from '@deepseek-ai/dsh-skill-filesystem'
 import * as manager from '../src/index.js'
+import * as SseMcpClient from '../src/mcp-sse.js'
 import { ExtensionStore } from '../src/store.js'
 
 async function fixture(t) {
@@ -58,6 +60,11 @@ test('managed sources and MCP servers can be edited and removed', async t => {
   const mcp = (await store.read()).find(row => row.id === 'demo')
   assert.equal(mcp.disabled, false)
   assert.equal(mcp.config.transport, 'streamable-http')
+  await store.updateMcp('demo', { transport: 'sse', url: 'http://localhost:9000/sse' })
+  const sse = (await store.read()).find(row => row.id === 'demo')
+  assert.equal(sse.disabled, false)
+  assert.equal(sse.name, '@civilization/deepseek-harness-skill-mcp/mcp-sse')
+  assert.equal(sse.config.transport, 'sse')
   await store.remove('notes')
   assert.deepEqual((await store.read()).map(row => row.id), ['demo'])
   await assert.rejects(store.remove('missing'), /Unknown/)
@@ -67,14 +74,17 @@ test('MCP transport validation rejects credential-bearing URLs and malformed con
   const { store } = await fixture(t)
   await assert.rejects(store.addMcp('bad', { transport: 'other' }))
   await assert.rejects(store.addMcp('bad', { transport: 'streamable-http', url: 'https://host/mcp?token=secret' }), /without credentials/)
+  await assert.rejects(store.addMcp('bad', { transport: 'sse', url: 'https://host/sse#token' }), /without credentials/)
   await assert.rejects(store.addMcp('bad', { transport: 'stdio', command: 'node', env: { TOKEN: 'secret' } }), /does not accept/)
   await store.addMcp('demo', { transport: 'stdio', command: 'node', args: ['server.js'] })
   await store.addMcp('windows', { transport: 'stdio', command: String.raw`C:\\Tools\\mcp.cmd` })
   await store.addMcp('remote', { transport: 'streamable-http', url: 'http://localhost:9000/mcp' })
+  await store.addMcp('legacy', { transport: 'sse', url: 'http://localhost:9000/sse' })
   const rows = await store.read()
   assert.equal(rows.find(row => row.id === 'windows').config.command, String.raw`C:\Tools\mcp.cmd`)
   assert.equal(rows.every(row => row.config.failOnStartupError === false), true)
-  assert.deepEqual(rows.map(row => row.disabled), [true, true, true])
+  assert.equal(rows.find(row => row.id === 'legacy').name, '@civilization/deepseek-harness-skill-mcp/mcp-sse')
+  assert.deepEqual(rows.map(row => row.disabled), [true, true, true, true])
 })
 
 test('strict MCP startup settings migrate to non-fatal startup', async t => {
@@ -214,6 +224,65 @@ test('saved HTTP MCP configuration discovers tools and removes them on unload', 
   assert.match(JSON.stringify(result.content), /pong/)
   await fiber.dispose()
   assert.equal(ctx.tools.schemas().some(tool => tool.name === 'mcp__probe__ping'), false)
+})
+
+test('saved legacy SSE MCP configuration discovers tools and removes them on unload', { timeout: 15000 }, async t => {
+  const { store } = await fixture(t)
+  const transports = new Map()
+  const mcpServers = new Set()
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url, 'http://localhost')
+    try {
+      if (request.method === 'GET' && url.pathname === '/sse') {
+        const mcp = new McpServer({ name: 'legacy-fixture', version: '1.0.0' })
+        mcp.registerTool('ping', { inputSchema: {} }, async () => ({ content: [{ type: 'text', text: 'pong' }] }))
+        const transport = new SSEServerTransport('/messages', response)
+        transports.set(transport.sessionId, transport)
+        mcpServers.add(mcp)
+        transport.onclose = () => {
+          transports.delete(transport.sessionId)
+          mcpServers.delete(mcp)
+        }
+        await mcp.connect(transport)
+        return
+      }
+      if (request.method === 'POST' && url.pathname === '/messages') {
+        const transport = transports.get(url.searchParams.get('sessionId'))
+        if (!transport) return response.writeHead(404).end()
+        await transport.handlePostMessage(request, response)
+        return
+      }
+      response.writeHead(404).end()
+    } catch (error) {
+      if (!response.headersSent) response.writeHead(500).end(String(error))
+    }
+  })
+  const ctx = new Context()
+  t.after(async () => {
+    await ctx.fiber.dispose()
+    await Promise.all([...mcpServers].map(mcp => mcp.close()))
+    await new Promise((resolve, reject) => {
+      server.close(error => error ? reject(error) : resolve())
+      server.closeAllConnections()
+    })
+  })
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  await store.addMcp('legacy', { transport: 'sse', url: `http://127.0.0.1:${server.address().port}/sse` })
+  await store.setEnabled('legacy', true)
+  const [row] = await store.read()
+  assert.equal(row.name, '@civilization/deepseek-harness-skill-mcp/mcp-sse')
+  row.config.failOnStartupError = true
+  await ctx.plugin(SystemPrompt)
+  await ctx.plugin(Tools)
+  const fiber = ctx.plugin(SseMcpClient, row.config)
+  await fiber
+  assert.equal(ctx.tools.schemas().some(tool => tool.name === 'mcp__legacy__ping'), true)
+  const result = await ctx.tools.execute({ callId: 'ping', name: 'mcp__legacy__ping', arguments: {}, signal: AbortSignal.timeout(5000) })
+  assert.equal(result.isError, false, JSON.stringify(result))
+  assert.match(JSON.stringify(result.content), /pong/)
+  await fiber.dispose()
+  assert.equal(ctx.tools.schemas().some(tool => tool.name === 'mcp__legacy__ping'), false)
 })
 
 test('an unavailable HTTP MCP server does not reject plugin startup', { timeout: 15000 }, async t => {

@@ -356,7 +356,7 @@ function McpForm({ row, t, busy, onSave, onCancel }) {
     void onSave({ id: row?.id ?? data.id, configuration })
   }}><fieldset disabled={busy}>{!row && field('id')}
     <label htmlFor={`${prefix}-transport`}>{t('transport')}<select id={`${prefix}-transport`} value={transport} onChange={event => setTransport(event.target.value)}>
-      <option value="stdio">{t('stdio')}</option><option value="streamable-http">{t('http')}</option></select></label>
+      <option value="stdio">{t('stdio')}</option><option value="streamable-http">{t('http')}</option><option value="sse">{t('sse')}</option></select></label>
     {transport === 'stdio' ? <>{field('command', true, false, initial.command)}{field('args', false, true, (initial.args ?? []).join('\n'))}{field('cwd', false, false, initial.cwd)}</> : field('url', true, false, initial.url)}
     <p>{t('secret')}</p>
     <div className="dsh-ext-actions"><button type="button" onClick={onCancel}>{t('cancel')}</button><button type="submit">{t(busy ? 'saving' : row ? 'saveChanges' : 'save')}</button></div>
@@ -380,7 +380,7 @@ function AddForm({ kind, t, busy, onSave, onCancel }) {
     void onSave(args)
   }}><fieldset disabled={busy}>{kind === 'skill' ? field('directory') : <>{field('id')}
       <label htmlFor={`${prefix}-transport`}>{t('transport')}<select id={`${prefix}-transport`} value={transport} onChange={event => setTransport(event.target.value)}>
-        <option value="stdio">{t('stdio')}</option><option value="streamable-http">{t('http')}</option></select></label>
+        <option value="stdio">{t('stdio')}</option><option value="streamable-http">{t('http')}</option><option value="sse">{t('sse')}</option></select></label>
       {transport === 'stdio' ? <>{field('command')}{field('args', false, true)}{field('cwd', false)}</> : field('url')}
       <p>{t('secret')}</p>
     </>}

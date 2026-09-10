@@ -4,11 +4,13 @@ import { basename, isAbsolute, resolve, win32 } from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
 import { Config as McpConfig } from '@deepseek-ai/dsh-mcp-client'
 import { Config as SkillConfig } from '@deepseek-ai/dsh-skill-filesystem'
+import { Config as SseMcpConfig } from './mcp-sse.js'
 import { parse, stringify } from 'yaml'
 
 const moduleNames = {
   skill: '@deepseek-ai/dsh-skill-filesystem',
   mcp: '@deepseek-ai/dsh-mcp-client',
+  mcpSse: '@civilization/deepseek-harness-skill-mcp/mcp-sse',
 }
 const managerModule = new URL('./index.js', import.meta.url).href
 const resolvedModules = Object.fromEntries(Object.entries(moduleNames).map(([kind, name]) => [kind, import.meta.resolve(name)]))
@@ -60,6 +62,9 @@ function parsePatch(value) {
         || row.config.customSkillDirs?.length !== 1 || !isAbsolute(row.config.customSkillDirs[0])) throw new Error('Invalid managed skill source.')
     } else if (isModule(row.name, 'mcp')) {
       McpConfig(row.config)
+      if (row.config.serverName !== row.id) throw new Error('MCP namespace must match its id.')
+    } else if (isModule(row.name, 'mcpSse')) {
+      SseMcpConfig(row.config)
       if (row.config.serverName !== row.id) throw new Error('MCP namespace must match its id.')
     } else throw new Error('Unknown managed plugin module.')
     managed.push(row)
@@ -183,7 +188,8 @@ export class ExtensionStore {
   async addMcp(id, input, signal, expectedRevision) {
     validateId(id)
     const config = this.normalizeMcp(id, input)
-    return this.add({ id, name: moduleNames.mcp, disabled: true, config }, signal, expectedRevision)
+    const name = config.transport === 'sse' ? moduleNames.mcpSse : moduleNames.mcp
+    return this.add({ id, name, disabled: true, config }, signal, expectedRevision)
   }
 
   normalizeMcp(id, input) {
@@ -194,8 +200,10 @@ export class ExtensionStore {
       command: typeof input.command === 'string' ? normalizeWindowsPath(input.command) : input.command,
       cwd: typeof input.cwd === 'string' && input.cwd ? normalizeWindowsPath(input.cwd) : input.cwd,
     } : input
-    const config = McpConfig({ ...normalized, serverName: id, failOnStartupError: false })
-    if (config.transport === 'streamable-http') {
+    const config = input.transport === 'sse'
+      ? SseMcpConfig({ ...normalized, serverName: id, failOnStartupError: false })
+      : McpConfig({ ...normalized, serverName: id, failOnStartupError: false })
+    if (config.transport === 'streamable-http' || config.transport === 'sse') {
       const url = new URL(config.url)
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('Use an HTTP(S) endpoint without credentials, query or fragment.')
     } else if (!config.command.trim()) throw new Error('MCP command cannot be empty.')
@@ -235,6 +243,7 @@ export class ExtensionStore {
     return this.update(rows => {
       const row = rows.find(row => row.id === id && row.config.serverName)
       if (!row) throw new Error('Unknown MCP server.')
+      row.name = config.transport === 'sse' ? moduleNames.mcpSse : moduleNames.mcp
       row.config = config
     }, signal, expectedRevision)
   }

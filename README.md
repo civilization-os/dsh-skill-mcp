@@ -2,7 +2,7 @@
 
 为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web 界面提供 Skill 路径和 MCP 服务器管理。
 
-安装后，“设置”中会出现 **Skill 管理** 和 **MCP 管理** 两个页面，同时向 Agent 注册 `extensions_*` 管理工具。插件使用 Harness 自带的 Skill filesystem provider 与 MCP client，配置写入当前 `web` profile 的 `cordis.patch.yml`。
+安装后，“设置”中会出现 **Skill 管理** 和 **MCP 管理** 两个页面，同时向 Agent 注册 `extensions_*` 管理工具。插件使用 Harness 自带的 Skill filesystem provider 与 MCP client，并为旧版 HTTP+SSE 服务提供兼容客户端；配置写入当前 `web` profile 的 `cordis.patch.yml`。
 
 ## 通过 dsh 安装
 
@@ -71,10 +71,11 @@ Skill 页面支持：
 
 ## MCP 管理
 
-支持两种 MCP 配置类型：
+支持三种 MCP 配置类型：
 
 - `stdio`：执行本地命令并通过标准输入输出通信
-- `HTTP`：连接 Streamable HTTP MCP 地址
+- `streamable-http`：连接推荐的 Streamable HTTP MCP 地址
+- `sse`：兼容使用独立 `/sse` 与 `/messages` 端点的旧版 MCP 服务
 
 stdio 示例：
 
@@ -96,13 +97,22 @@ HTTP 示例：
 }
 ```
 
+旧版 SSE 示例：
+
+```json
+{
+  "transport": "sse",
+  "url": "http://127.0.0.1:9000/sse"
+}
+```
+
 服务器卡片使用状态灯显示禁用、等待发现工具或工具可用，并可展开查看实际注册的工具列表。MCP 配置可以编辑或删除，编辑时保留服务器 id 与启用状态。新服务器默认禁用；启用 stdio 服务器会在 Agent 沙箱之外执行所配置的程序。
 
 MCP 工具是提供给模型的工具 schema，不是用户 `/` 命令，因此不会出现在 Skill 斜杠菜单中；它们的动态状态以 MCP 页面中的“工具列表”和 `extensions_inspect` 为准。
 
 当前版本不接受 `env`、认证 header、带凭据或 token 查询参数的 URL。请勿把密钥放进工具参数、MCP 地址或提交到仓库。
 
-MCP 对端离线、命令启动失败或首次工具发现失败不会阻止 DSH 启动。默认重连策略会在后台重试；设置页在连接恢复并发现工具后更新状态。插件加载时也会把旧版本写入的严格启动配置迁移为非致命启动策略。
+MCP 对端离线、命令启动失败或首次工具发现失败不会阻止 DSH 启动。stdio 与 Streamable HTTP 使用 Harness MCP client 的后台重连策略；旧版 SSE 当前依赖连接自身，在断线后可通过刷新配置重新加载。设置页在连接恢复并发现工具后更新状态。插件加载时也会把旧版本写入的严格启动配置迁移为非致命启动策略。
 
 ## Agent 工具
 
@@ -110,7 +120,7 @@ MCP 对端离线、命令启动失败或首次工具发现失败不会阻止 DSH
 |---|---|
 | `extensions_list` | 查看受管 Skill 路径与 MCP 配置 |
 | `extensions_add_skill` | 添加 Skill 路径；Agent 调用时显式指定内部 id |
-| `extensions_add_mcp` | 添加 stdio 或 HTTP MCP 配置 |
+| `extensions_add_mcp` | 添加 stdio、Streamable HTTP 或旧版 SSE MCP 配置 |
 | `extensions_set_enabled` | 启用或禁用受管配置 |
 | `extensions_update_skill` | 修改 Skill 来源路径 |
 | `extensions_update_mcp` | 替换 MCP 连接配置并保留 id 与启用状态 |
