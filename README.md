@@ -153,9 +153,9 @@ pnpm run web
 
 ## 验证
 
-自动测试覆盖配置持久化、Skill 多路径、编辑和删除、单技能内容编辑与删除、用户分组、并发 revision、Skill 创建与调用权限、MCP 工具发现和卸载、轮询状态以及中英文词典一致性。测试不需要模型 API key。
+自动测试覆盖配置持久化、Skill 多路径、编辑和删除、单技能内容编辑与删除、用户分组、并发 revision、Skill 创建与调用权限、MCP 工具发现和卸载、轮询状态、中英文词典一致性，以及 DSH `webServer` 前缀路由、OPTIONS 预检和 RPC 信封协议桥接。测试不需要模型 API key。
 
-浏览器端 `/` 候选缓存失效兼容逻辑会使用公开的 `connection/reset` 客户端事件；自动测试验证 Host/RPC 和浏览器 bundle 构建，但没有在本仓库内启动完整 Harness Web 做端到端菜单点击验证。外部文件改动仍依赖 filesystem provider 先完成 watcher 失效，必要时可在变更后点击管理页“刷新”。
+浏览器端 `/` 候选缓存失效兼容逻辑会使用公开的 `connection/reset` 客户端事件；服务端通过注入 `webServer` 与 `connection` 双重挂载 `/extensions` 路由并由 Cordis effect 托管生命周期，防止动态请求掉入前端静态资源的 405 fallback。自动测试验证 Host/RPC、HTTP 桥接和浏览器 bundle 构建，但没有在本仓库内启动完整 Harness Web 做端到端菜单点击验证。外部文件改动仍依赖 filesystem provider 先完成 watcher 失效，必要时可在变更后点击管理页“刷新”。
 
 ## 发布
 

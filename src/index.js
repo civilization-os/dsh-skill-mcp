@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { ExtensionStore } from './store.js'
-import { createWebHandler } from './web.js'
+import { createWebHandler, createWebHttpHandler } from './web.js'
 
 export const name = 'extension-manager'
 export const inject = ['tools', 'skills']
@@ -21,8 +21,19 @@ export async function apply(ctx, config) {
   const home = process.env.DSH_HOME || join(homedir(), '.dsh')
   const store = new ExtensionStore(config.patchPath || join(home, 'profiles', 'web', 'cordis.patch.yml'))
   await store.ensureNonFatalMcpStartup()
+
+  const webHandler = createWebHandler(store, ctx)
+  const httpHandler = createWebHttpHandler(store, ctx)
+
   ctx.inject(['connection'], web => {
-    web.connection.rpc.handle('/extensions', createWebHandler(store, ctx))
+    web.connection.rpc.handle('/extensions', webHandler)
+  })
+  ctx.inject(['webServer'], hostCtx => {
+    hostCtx.effect(() => hostCtx.webServer.register({
+      kind: 'prefix',
+      path: '/extensions',
+      handler: httpHandler,
+    }), 'extension-manager: /extensions route')
   })
   const register = (name, description, parameters, execute) => ctx.tools.register(defineTool({ name, description, parameters, output, execute }))
 

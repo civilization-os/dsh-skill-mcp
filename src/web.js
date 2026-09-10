@@ -61,7 +61,7 @@ export function createWebHandler(store, ctx) {
     try {
       if (!Object.hasOwn(schemas, endpoint)) throw new Error('Unknown operation.')
       const args = schemas[endpoint](payload)
-      signal.throwIfAborted()
+      signal?.throwIfAborted()
       if (endpoint === 'add-skill') await store.addSkillPath(args.directory, signal, args.revision)
       if (endpoint === 'add-mcp') {
         const input = JSON.parse(args.configuration)
@@ -95,5 +95,70 @@ export function createWebHandler(store, ctx) {
         message: 'Extension operation failed.', details: {},
       } }
     }
+  }
+}
+
+/** HTTP server route handler that satisfies DSH WebServer and RPC envelope protocols. */
+export function createWebHttpHandler(store, ctx) {
+  const handler = createWebHandler(store, ctx)
+  return async (req, res) => {
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, {
+        'access-control-allow-origin': '*',
+        'access-control-allow-methods': 'POST, OPTIONS',
+        'access-control-allow-headers': 'content-type, *',
+      })
+      res.end()
+      return
+    }
+    if (req.method !== 'POST') {
+      res.writeHead(405, { 'content-type': 'application/json; charset=utf-8' })
+      res.end(JSON.stringify({ ok: false, error: { message: 'Method Not Allowed' } }))
+      return
+    }
+    const pathname = new URL(req.url ?? '/', 'http://dsh.internal').pathname
+    const endpoint = pathname.startsWith('/extensions/') ? pathname.slice('/extensions/'.length)
+      : pathname === '/extensions' ? 'list' : undefined
+    if (!endpoint) {
+      res.writeHead(404, { 'content-type': 'application/json; charset=utf-8' })
+      res.end(JSON.stringify({ ok: false, error: { message: 'Not Found' } }))
+      return
+    }
+
+    let raw = ''
+    try {
+      for await (const chunk of req) raw += chunk.toString('utf8')
+    } catch {
+      res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' })
+      res.end(JSON.stringify({ ok: false, error: { message: 'Failed to read request body.' } }))
+      return
+    }
+
+    let body = {}
+    if (raw.trim()) {
+      try { body = JSON.parse(raw) }
+      catch {
+        res.writeHead(400, { 'content-type': 'application/json; charset=utf-8' })
+        res.end(JSON.stringify({ ok: false, error: { message: 'Invalid JSON body.' } }))
+        return
+      }
+    }
+
+    const isRpcEnvelope = body && body.type === 'client-request' && typeof body.rpcId === 'string'
+    const actualEndpoint = isRpcEnvelope ? (body.method || endpoint) : endpoint
+    const payload = isRpcEnvelope ? (body.payload ?? {}) : body
+
+    const result = await handler(actualEndpoint, payload, req.signal)
+
+    const responseBody = isRpcEnvelope
+      ? { type: 'server-response', rpcId: body.rpcId, result }
+      : result
+
+    const data = JSON.stringify(responseBody)
+    res.writeHead(200, {
+      'content-type': 'application/json; charset=utf-8',
+      'content-length': Buffer.byteLength(data),
+    })
+    res.end(data)
   }
 }

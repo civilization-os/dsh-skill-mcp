@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, writeFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ExtensionStore } from '../src/store.js'
-import { createWebHandler } from '../src/web.js'
+import { createWebHandler, createWebHttpHandler } from '../src/web.js'
 import { ExtensionsController, refreshesSlashCatalog } from '../src/client/controller.js'
 import { zh, en } from '../src/client/locales.js'
 
@@ -203,4 +203,55 @@ test('ordinary page reads and MCP writes do not reset the slash catalog', () => 
   assert.equal(refreshesSlashCatalog('list', { refreshSlashCatalog: true }), true)
   assert.equal(refreshesSlashCatalog('create-skill'), true)
   assert.equal(refreshesSlashCatalog('delete-skill'), true)
+})
+
+test('createWebHttpHandler bridges HTTP requests, OPTIONS, and DSH RPC envelopes', async t => {
+  const { store } = await fixture(t)
+  const httpHandler = createWebHttpHandler(store, { tools: { schemas: () => [] } })
+
+  function mockRes() {
+    return {
+      statusCode: 200,
+      headers: {},
+      body: '',
+      writeHead(code, headers = {}) {
+        this.statusCode = code
+        this.headers = headers
+      },
+      end(data = '') {
+        this.body += data
+      },
+    }
+  }
+
+  // 1. OPTIONS request returns 204
+  const optionsReq = { method: 'OPTIONS', url: '/extensions/list', headers: {} }
+  const optionsRes = mockRes()
+  await httpHandler(optionsReq, optionsRes)
+  assert.equal(optionsRes.statusCode, 204)
+
+  // 2. GET request returns 405
+  const getReq = { method: 'GET', url: '/extensions/list', headers: {} }
+  const getRes = mockRes()
+  await httpHandler(getReq, getRes)
+  assert.equal(getRes.statusCode, 405)
+
+  // 3. POST client-request RPC envelope returns matching server-response envelope
+  async function* makeChunks(str) {
+    yield Buffer.from(str)
+  }
+  const rpcPayload = { type: 'client-request', rpcId: 'rpc-test-999', method: 'list', payload: {} }
+  const rpcReq = Object.assign(makeChunks(JSON.stringify(rpcPayload)), {
+    method: 'POST',
+    url: '/extensions/list',
+    headers: { 'content-type': 'application/json' },
+  })
+  const rpcRes = mockRes()
+  await httpHandler(rpcReq, rpcRes)
+  assert.equal(rpcRes.statusCode, 200)
+  const parsed = JSON.parse(rpcRes.body)
+  assert.equal(parsed.type, 'server-response')
+  assert.equal(parsed.rpcId, 'rpc-test-999')
+  assert.equal(parsed.result.ok, true)
+  assert.equal(typeof parsed.result.value.revision, 'string')
 })
