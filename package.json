@@ -1,6 +1,6 @@
 {
   "name": "@civilization/deepseek-harness-skill-mcp",
-  "version": "0.1.9",
+  "version": "0.2.0",
   "description": "Skill path and MCP server management for DeepSeek Harness Web",
   "license": "Apache-2.0",
   "repository": {
