@@ -2,6 +2,7 @@
 import Schema from '@deepseek-ai/schemastery'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { readFile } from 'node:fs/promises'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { ExtensionStore } from './store.js'
 import { createWebHandler, createWebHttpHandler } from './web.js'
@@ -18,6 +19,19 @@ const output = {
 
 /** Register management operations. MCP processes are started only by the profile loader. */
 export async function apply(ctx, config) {
+  try {
+    const skillPath = new URL('../skills/extension-management/SKILL.md', import.meta.url)
+    const skillText = await readFile(skillPath, 'utf8')
+    const content = skillText.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '').trim()
+    ctx.effect(() => ctx.skills?.register({
+      name: 'extension-management',
+      description: 'Manage custom Skill directories and Model Context Protocol (MCP) server configurations.',
+      whenToUse: 'Use when configuring, inspecting, adding, or modifying external skills and MCP servers.',
+      source: 'bundled',
+      content,
+    }))
+  } catch {}
+
   const home = process.env.DSH_HOME || join(homedir(), '.dsh')
   const store = new ExtensionStore(config.patchPath || join(home, 'profiles', 'web', 'cordis.patch.yml'))
   await store.ensureNonFatalMcpStartup()

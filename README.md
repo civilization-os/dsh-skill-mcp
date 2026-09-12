@@ -114,7 +114,11 @@ MCP 工具是提供给模型的工具 schema，不是用户 `/` 命令，因此�
 
 MCP 对端离线、命令启动失败或首次工具发现失败不会阻止 DSH 启动。stdio 与 Streamable HTTP 使用 Harness MCP client 的后台重连策略；旧版 SSE 当前依赖连接自身，在断线后可通过刷新配置重新加载。设置页在连接恢复并发现工具后更新状态。插件加载时也会把旧版本写入的严格启动配置迁移为非致命启动策略。
 
-## Agent 工具
+## Agent 工具与 Skill
+
+插件向 DSH 注册了 `extension-management` Skill 以及 7 个模型专属管理工具：
+
+- **`extension-management` Skill**：引导模型掌握受管 Skill 路径与 stdio / streamable-http / sse 模式 MCP 服务器的标准配置结构与安全规约。
 
 | 工具 | 作用 |
 |---|---|
