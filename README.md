@@ -69,6 +69,38 @@ Skill 页面支持：
 
 新路径默认禁用。启用后，Harness 的 Skill provider 扫描该路径中的技能。页面在前台时每 3 秒刷新一次。当前 Harness Web 会按会话缓存 `/` Skill 候选，但未把 Host 的 `skills/change` 转发给浏览器；本插件在管理操作成功或用户点击“刷新”后触发客户端目录缓存失效，使下一次打开 `/` 菜单重新读取 Skill 列表。直接在文件系统外部修改 Skill 时，在管理页点击一次“刷新”即可同步菜单。
 
+## 工具管理 (Skill Catalog)
+
+通过新增的 `skill-catalog` 配置项，插件可管理当前 Harness 运行时中各个已安装插件所注册的工具（如 `dsh-autotask` 的自动化任务工具、`dsh-drawio` 的架构绘图工具、`dsh-playwright` 的浏览器工具、MCP 工具等），支持自由选择性启用或禁用。
+
+### 1. 配置项 `skill-catalog`
+支持在 `cordis.patch.yml` 中或设置界面配置：
+
+```yaml
+- insert:
+    - id: dsh-skill-mcp
+      name: "@civilization/deepseek-harness-skill-mcp"
+      config:
+        skill-catalog:
+          disabledTools:
+            - session_create_autotask
+            - drawio_render
+```
+
+### 2. 接管与安全拦截机制
+- **自动归类**：自动扫描运行时注册的所有工具，根据工具命名规则智能归属到所属插件（如 `session_*_autotask` 归属于 `dsh-autotask`，`drawio_*` 归属于 `dsh-drawio`，`browser_*` 归属于 `dsh-playwright`，`mcp__*` 归属于对应 MCP 服务）。
+- **单调守卫拦截 (`ctx.tools.guard`)**：当工具被配置为禁用时，Cordis 单调守卫将在工具调用前拦截并返回友好提示（`【Skill Catalog 接管】工具 "..." 当前已被禁用`），杜绝 Agent 越权或误调用。
+- **瀑布流预检查 (`tools/pre-execute`)**：在调度层提前做出 `deny` 决策。
+- **核心工具保护**：PTC 核心传输通道与内部 catalog 控制工具自动设为受保护状态，防止误禁用导致环境不可用。
+
+### 3. Web 界面操作
+设置中心的“**工具接管**”页面提供：
+- 总工具数、已启用、已禁用和插件/服务统计面板；
+- 实时搜索工具名称、描述与插件前缀；
+- 按插件分组筛选与分组折叠卡片；
+- 每个工具独立的现代化开关（Switch Toggle）；
+- 插件级别的“全选启用”与“全部禁用”快捷操作。
+
 ## MCP 管理
 
 支持三种 MCP 配置类型：
@@ -116,7 +148,7 @@ MCP 对端离线、命令启动失败或首次工具发现失败不会阻止 DSH
 
 ## Agent 工具与 Skill
 
-插件向 DSH 注册了 `extension-management` Skill 以及 7 个模型专属管理工具：
+插件向 DSH 注册了 `extension-management` Skill 以及 9 个模型专属管理工具：
 
 - **`extension-management` Skill**：引导模型掌握受管 Skill 路径与 stdio / streamable-http / sse 模式 MCP 服务器的标准配置结构与安全规约。
 
@@ -130,6 +162,8 @@ MCP 对端离线、命令启动失败或首次工具发现失败不会阻止 DSH
 | `extensions_update_mcp` | 替换 MCP 连接配置并保留 id 与启用状态 |
 | `extensions_remove` | 移除 Skill 来源或 MCP 配置；不会删除 Skill 来源目录 |
 | `extensions_inspect` | 查看当前 Agent 实际可见的 Skill 与 MCP 工具 |
+| `extensions_catalog_list` | 列出系统中所有发现的工具、插件归类与启停状态 |
+| `extensions_catalog_set` | 启用或禁用特定工具（受 skill-catalog 接管） |
 
 可以直接告诉 Agent：
 

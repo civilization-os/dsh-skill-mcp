@@ -31,14 +31,15 @@ export function apply(ctx) {
     return ok
   }
   const face = { hooks: { manager: controller }, request }
-  // The two sections share one controller and managed patch; each kind gets its own settings page.
+  // The three sections share one controller and managed patch; each kind gets its own settings page.
   const section = (id, kind) => ctx.slots.inject('settings.section', () => ctx.slots.register({
-    name: 'settings.section', id, order: kind === 'skill' ? 16 : 17,
-    label: () => t(kind === 'skill' ? 'navSkill' : 'navMcp'), locale: namespace,
+    name: 'settings.section', id, order: kind === 'skill' ? 16 : kind === 'mcp' ? 17 : 18,
+    label: () => t(kind === 'skill' ? 'navSkill' : kind === 'mcp' ? 'navMcp' : 'navCatalog'), locale: namespace,
     inject: () => face,
-  }, kind === 'skill' ? SkillSection : McpSection))
+  }, kind === 'skill' ? SkillSection : kind === 'mcp' ? McpSection : CatalogSection))
   section('skill-manager', 'skill')
   section('mcp-manager', 'mcp')
+  section('skill-catalog', 'catalog')
 }
 
 export function SkillSection({ t, useManager, request }) {
@@ -387,3 +388,147 @@ function AddForm({ kind, t, busy, onSave, onCancel }) {
     <div className="dsh-ext-actions"><button type="button" onClick={onCancel}>{t('cancel')}</button><button type="submit">{t(busy ? 'saving' : 'save')}</button></div>
   </fieldset></form>
 }
+
+export function CatalogSection({ t, useManager, request }) {
+  const state = useManager(value => value)
+  const [query, setQuery] = useState('')
+  const [pluginFilter, setPluginFilter] = useState('all')
+  const busy = state.loading || state.saving
+  const catalog = state.catalog ?? { tools: [], groups: [], summary: { total: 0, enabled: 0, disabled: 0, pluginCount: 0 } }
+  const groups = catalog.groups ?? []
+  const summary = catalog.summary ?? { total: 0, enabled: 0, disabled: 0, pluginCount: 0 }
+
+  useLiveRefresh(request)
+
+  const visibleGroups = groups
+    .filter(g => pluginFilter === 'all' || g.id === pluginFilter)
+    .map(g => {
+      const filteredTools = g.tools.filter(tool => {
+        const text = `${tool.name} ${tool.description} ${g.name}`.toLowerCase()
+        return text.includes(query.toLowerCase())
+      })
+      return { ...g, tools: filteredTools }
+    })
+    .filter(g => g.tools.length > 0)
+
+  const handleToggleTool = async (toolName, currentEnabled) => {
+    await request('catalog-set-tool', { tool: toolName, enabled: !currentEnabled })
+  }
+
+  const handleToggleGroup = async (groupTools, targetEnabled) => {
+    const names = groupTools.filter(t => t.canToggle).map(t => t.name)
+    if (names.length === 0) return
+    await request('catalog-set-group', { tools: names, enabled: targetEnabled })
+  }
+
+  return <section className="dsh-ext dsh-catalog-section">
+    <header className="dsh-ext-heading">
+      <div>
+        <h2>{t('navCatalog')}</h2>
+        <p>{t('catalogIntro')}</p>
+      </div>
+      <div className="dsh-ext-heading-actions">
+        <button type="button" disabled={busy} onClick={() => request('list')}>{t('refresh')}</button>
+      </div>
+    </header>
+    <PageState state={state} t={t} />
+
+    <div className="dsh-skill-stats">
+      <div><strong>{summary.total}</strong><span>{t('stat_catalogTotal')}</span></div>
+      <div><strong style={{ color: 'var(--dsw-alias-brand-primary, #3182ce)' }}>{summary.enabled}</strong><span>{t('stat_catalogEnabled')}</span></div>
+      <div><strong style={{ color: summary.disabled > 0 ? '#e05252' : 'inherit' }}>{summary.disabled}</strong><span>{t('stat_catalogDisabled')}</span></div>
+      <div><strong>{summary.pluginCount}</strong><span>{t('stat_catalogPlugins')}</span></div>
+    </div>
+
+    <label className="dsh-skill-search">
+      <span className="dsh-visually-hidden">{t('search')}</span>
+      <input
+        type="search"
+        value={query}
+        onChange={event => setQuery(event.target.value)}
+        placeholder={t('catalogSearchPlaceholder')}
+      />
+    </label>
+
+    <div className="dsh-skill-filters" style={{ gridTemplateColumns: '1fr' }}>
+      <label>{t('filterPlugin')}<select value={pluginFilter} onChange={event => setPluginFilter(event.target.value)}>
+        <option value="all">{t('filterAllPlugins')}</option>
+        {groups.map(g => <option key={g.id} value={g.id}>{g.name} ({g.total})</option>)}
+      </select></label>
+    </div>
+
+    {visibleGroups.length === 0 ? (
+      <div className="dsh-ext-card dsh-ext-empty">
+        <strong>{t('noCatalogResults')}</strong>
+        <p>{t('noCatalogResultsHint')}</p>
+      </div>
+    ) : (
+      visibleGroups.map(group => (
+        <details key={group.id} className="dsh-catalog-group-card">
+          <summary className="dsh-catalog-group-header">
+            <div className="dsh-catalog-group-title">
+              <h4>{group.name}</h4>
+              <span className="dsh-ext-count">{group.enabledCount} / {group.total} 可用</span>
+            </div>
+            <div className="dsh-catalog-group-actions" onClick={event => event.stopPropagation()}>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={event => {
+                  event.stopPropagation()
+                  handleToggleGroup(group.tools, true)
+                }}
+              >{t('enableAll')}</button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={event => {
+                  event.stopPropagation()
+                  handleToggleGroup(group.tools, false)
+                }}
+              >{t('disableAll')}</button>
+            </div>
+          </summary>
+          <div className="dsh-catalog-tool-list">
+            {group.tools.map(tool => (
+              <div key={tool.name} className="dsh-catalog-tool-item">
+                <div className="dsh-catalog-tool-info">
+                  <div className="dsh-catalog-tool-header">
+                    <code>{tool.name}</code>
+                    <span className={`dsh-skill-badge ${tool.enabled ? 'dsh-skill-badge-group' : 'dsh-skill-badge-invalid'}`}>
+                      {tool.enabled ? t('enabled') : t('disabled')}
+                    </span>
+                    {!tool.canToggle && (
+                      <span className="dsh-skill-badge">{t('toolProtected')}</span>
+                    )}
+                  </div>
+                  {tool.description && (
+                    <details className="dsh-catalog-tool-details">
+                      <summary>{t('details')}</summary>
+                      <p>{tool.description}</p>
+                    </details>
+                  )}
+                </div>
+                <div className="dsh-catalog-switch-wrap">
+                  <span className="dsh-catalog-switch-label" style={{ color: tool.enabled ? 'var(--dsw-alias-label-primary)' : 'var(--dsw-alias-label-tertiary)' }}>
+                    {t(tool.enabled ? 'enable' : 'disable')}
+                  </span>
+                  <label className="dsh-catalog-switch">
+                    <input
+                      type="checkbox"
+                      checked={tool.enabled}
+                      disabled={busy || !tool.canToggle}
+                      onChange={() => handleToggleTool(tool.name, tool.enabled)}
+                    />
+                    <span className="dsh-catalog-slider" />
+                  </label>
+                </div>
+              </div>
+            ))}
+          </div>
+        </details>
+      ))
+    )}
+  </section>
+}
+

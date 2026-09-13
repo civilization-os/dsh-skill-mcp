@@ -6,10 +6,17 @@ import { readFile } from 'node:fs/promises'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { ExtensionStore } from './store.js'
 import { createWebHandler, createWebHttpHandler } from './web.js'
+import { buildToolCatalog } from './catalog.js'
 
 export const name = 'extension-manager'
 export const inject = ['tools', 'skills']
-export const Config = Schema.object({ patchPath: Schema.string().default('') })
+export const Config = Schema.object({
+  patchPath: Schema.string().default(''),
+  'skill-catalog': Schema.object({
+    disabledTools: Schema.array(Schema.string()).default([]),
+    enabledTools: Schema.array(Schema.string()).default([]),
+  }).description('插件工具目录接管配置，控制各插件工具的启用与禁用').default({}),
+})
 
 const string = { type: 'string', required: true }
 const output = {
@@ -33,11 +40,44 @@ export async function apply(ctx, config) {
   } catch {}
 
   const home = process.env.DSH_HOME || join(homedir(), '.dsh')
-  const store = new ExtensionStore(config.patchPath || join(home, 'profiles', 'web', 'cordis.patch.yml'))
+  const store = new ExtensionStore(config?.patchPath || join(home, 'profiles', 'web', 'cordis.patch.yml'))
   await store.ensureNonFatalMcpStartup()
 
-  const webHandler = createWebHandler(store, ctx)
-  const httpHandler = createWebHttpHandler(store, ctx)
+  const staticCatalog = config?.['skill-catalog'] || {}
+  let cachedDisabled = new Set(staticCatalog.disabledTools || [])
+
+  const refreshCatalogCache = async () => {
+    try {
+      const persisted = await store.readCatalog(staticCatalog)
+      cachedDisabled = new Set(persisted.disabledTools || [])
+    } catch {}
+  }
+  void refreshCatalogCache()
+
+  // Monotonic guard: 单调拒绝被 skill-catalog 禁用的工具执行
+  ctx.tools.guard(exec => {
+    if (cachedDisabled.has(exec.name)) {
+      return `【Skill Catalog】工具 "${exec.name}" 当前已被禁用。请在设置页面的“工具管理”或配置项中启用后再调用。`
+    }
+  })
+
+  // Waterfall pre-execute 拦截
+  ctx.on('tools/pre-execute', async (exec, next) => {
+    if (cachedDisabled.has(exec.name)) {
+      return {
+        kind: 'deny',
+        reason: `【Skill Catalog】工具 "${exec.name}" 已被配置禁用。`,
+      }
+    }
+    return next()
+  })
+
+  const onCatalogChange = (newDisabledList) => {
+    cachedDisabled = new Set(newDisabledList)
+  }
+
+  const webHandler = createWebHandler(store, ctx, { onCatalogChange, staticCatalog })
+  const httpHandler = createWebHttpHandler(store, ctx, { onCatalogChange, staticCatalog })
 
   ctx.inject(['connection'], web => {
     web.connection.rpc.handle('/extensions', webHandler)
@@ -89,4 +129,17 @@ export async function apply(ctx, config) {
     skills: await ctx.skills.snapshot({ cwd: args.cwd, scope: exec.agent, signal: exec.signal }),
     mcpTools: ctx.tools.schemas(exec.agent).map(tool => tool.name).filter(name => name.startsWith('mcp__')),
   }))
+
+  register('extensions_catalog_list', 'List all detected tools, plugin groups, and their enabled status under skill-catalog takeover.', {}, async () => {
+    await refreshCatalogCache()
+    return buildToolCatalog(ctx, { disabledTools: Array.from(cachedDisabled) })
+  })
+  register('extensions_catalog_set', 'Enable or disable a specific tool under skill-catalog takeover.', {
+    tool: string, enabled: { type: 'boolean', required: true },
+  }, async (args, exec) => {
+    const updated = await store.setToolEnabled(args.tool, args.enabled, exec.signal)
+    cachedDisabled = new Set(updated.disabledTools || [])
+    return { tool: args.tool, enabled: args.enabled, catalog: updated }
+  })
 }
+

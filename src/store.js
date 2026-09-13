@@ -1,5 +1,5 @@
 /** Owns a marked block inside a profile Cordis patch while retaining legacy JSON stores. */
-import { open, readFile, rename, unlink, stat } from 'node:fs/promises'
+import { open, readFile, writeFile, rename, unlink, stat } from 'node:fs/promises'
 import { basename, isAbsolute, resolve, win32 } from 'node:path'
 import { randomUUID, createHash } from 'node:crypto'
 import { Config as McpConfig } from '@deepseek-ai/dsh-mcp-client'
@@ -254,5 +254,66 @@ export class ExtensionStore {
       if (index < 0) throw new Error('Unknown extension id.')
       rows.splice(index, 1)
     }, signal, expectedRevision)
+  }
+
+  catalogPath() {
+    return `${this.path}.catalog.json`
+  }
+
+  async readCatalog(staticConfig = {}) {
+    let persisted = { disabledTools: [] }
+    try {
+      const content = await readFile(this.catalogPath(), 'utf8')
+      const parsed = JSON.parse(content)
+      if (parsed && typeof parsed === 'object') {
+        persisted = {
+          disabledTools: Array.isArray(parsed.disabledTools) ? parsed.disabledTools : [],
+        }
+      }
+    } catch {}
+
+    const staticDisabled = Array.isArray(staticConfig?.disabledTools)
+      ? staticConfig.disabledTools
+      : []
+
+    const merged = Array.from(new Set([...persisted.disabledTools, ...staticDisabled]))
+    return { disabledTools: merged }
+  }
+
+  async updateCatalog(updater, signal) {
+    signal?.throwIfAborted()
+    const current = await this.readCatalog()
+    const nextVal = typeof updater === 'function' ? await updater(current) : updater
+    const nextConfig = {
+      disabledTools: Array.isArray(nextVal?.disabledTools) ? nextVal.disabledTools : [],
+    }
+    const temp = `${this.catalogPath()}.${randomUUID()}.tmp`
+    await writeFile(temp, JSON.stringify(nextConfig, null, 2), 'utf8')
+    signal?.throwIfAborted()
+    await rename(temp, this.catalogPath())
+    return nextConfig
+  }
+
+  async setToolEnabled(toolName, enabled, signal) {
+    return this.updateCatalog(current => {
+      const set = new Set(current.disabledTools)
+      if (enabled) {
+        set.delete(toolName)
+      } else {
+        set.add(toolName)
+      }
+      return { disabledTools: Array.from(set) }
+    }, signal)
+  }
+
+  async setGroupEnabled(toolNames, enabled, signal) {
+    return this.updateCatalog(current => {
+      const set = new Set(current.disabledTools)
+      for (const name of toolNames) {
+        if (enabled) set.delete(name)
+        else set.add(name)
+      }
+      return { disabledTools: Array.from(set) }
+    }, signal)
   }
 }

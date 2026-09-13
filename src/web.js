@@ -2,6 +2,7 @@
 import Schema from '@deepseek-ai/schemastery'
 import { revisionOf } from './store.js'
 import { createSkill, deleteSkill, inspectSkills, setSkillGroup, setSkillInvocation, updateSkill } from './skills.js'
+import { buildToolCatalog } from './catalog.js'
 
 const text = Schema.string().required()
 const schemas = {
@@ -28,16 +29,23 @@ const schemas = {
     modelInvocable: Schema.boolean().required(), userInvocable: Schema.boolean().required(), revision: text,
   }),
   'delete-skill': Schema.object({ sourceId: text, relativePath: text, skillRevision: text, revision: text }),
+  'catalog-set-tool': Schema.object({ tool: text, enabled: Schema.boolean().required(), revision: text }),
+  'catalog-set-group': Schema.object({ tools: Schema.array(text).required(), enabled: Schema.boolean().required(), revision: text }),
+  'catalog-update': Schema.object({ disabledTools: Schema.array(text).required(), revision: text }),
 }
 
 /** Return redacted configuration and observed global tool availability. */
-export async function describeExtensions(store, ctx) {
+export async function describeExtensions(store, ctx, options = {}) {
   const rows = await store.read()
-  const toolNames = ctx.tools.schemas().map(tool => tool.name)
+  const toolNames = ctx.tools ? ctx.tools.schemas().map(tool => tool.name) : []
   const inventory = await inspectSkills(rows)
+  const catalogConfig = await store.readCatalog(options.staticCatalog)
+  const catalog = buildToolCatalog(ctx, catalogConfig)
+
   return {
     revision: revisionOf(rows),
     ...inventory,
+    catalog,
     extensions: rows.map(row => ({
       id: row.id,
       kind: row.config.serverName ? 'mcp' : 'skill',
@@ -56,7 +64,7 @@ export async function describeExtensions(store, ctx) {
 }
 
 /** All writes carry the exact revision shown to the user. */
-export function createWebHandler(store, ctx) {
+export function createWebHandler(store, ctx, options = {}) {
   return async (endpoint, payload, signal) => {
     try {
       if (!Object.hasOwn(schemas, endpoint)) throw new Error('Unknown operation.')
@@ -76,6 +84,18 @@ export function createWebHandler(store, ctx) {
       }
       if (endpoint === 'delete-extension') await store.remove(args.id, signal, args.revision)
       if (endpoint === 'enable') await store.setEnabled(args.id, args.enabled, signal, args.revision)
+      if (endpoint === 'catalog-set-tool') {
+        const updated = await store.setToolEnabled(args.tool, args.enabled, signal)
+        options.onCatalogChange?.(updated.disabledTools)
+      }
+      if (endpoint === 'catalog-set-group') {
+        const updated = await store.setGroupEnabled(args.tools, args.enabled, signal)
+        options.onCatalogChange?.(updated.disabledTools)
+      }
+      if (endpoint === 'catalog-update') {
+        const updated = await store.updateCatalog({ disabledTools: args.disabledTools }, signal)
+        options.onCatalogChange?.(updated.disabledTools)
+      }
       if (['create-skill', 'set-skill-invocation', 'set-skill-group', 'update-skill', 'delete-skill'].includes(endpoint)) {
         const rows = await store.read()
         if (revisionOf(rows) !== args.revision) {
@@ -87,7 +107,7 @@ export function createWebHandler(store, ctx) {
         else if (endpoint === 'update-skill') await updateSkill(rows, args)
         else await deleteSkill(rows, args)
       }
-      return { ok: true, value: await describeExtensions(store, ctx) }
+      return { ok: true, value: await describeExtensions(store, ctx, options) }
     } catch (error) {
       return { ok: false, error: {
         code: error.code === 'CONFLICT' ? 'extensions/conflict' : 'extensions/rejected',
@@ -99,8 +119,8 @@ export function createWebHandler(store, ctx) {
 }
 
 /** HTTP server route handler that satisfies DSH WebServer and RPC envelope protocols. */
-export function createWebHttpHandler(store, ctx) {
-  const handler = createWebHandler(store, ctx)
+export function createWebHttpHandler(store, ctx, options = {}) {
+  const handler = createWebHandler(store, ctx, options)
   return async (req, res) => {
     if (req.method === 'OPTIONS') {
       res.writeHead(204, {
