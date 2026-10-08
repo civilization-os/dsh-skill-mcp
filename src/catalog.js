@@ -1,13 +1,22 @@
 /** Plugin tool discovery, classification, and execution takeover management. */
 
-/** Builtin core tools shipped with DSH runtime. */
+/**
+ * Tool names shipped by the Harness runtime itself, verified against the
+ * `dsh-tool-*`/`dsh-schedule` packages of DSH 0.2.0-rc.2. Core tools are listed,
+ * grouped as `Builtin`, and protected from execution takeover, so a stale entry
+ * here is a correctness bug rather than cosmetics: unknown core tools would be
+ * labelled as plugins and become disableable. Refresh this set when a Harness
+ * release adds or renames a bundled tool.
+ */
 const builtinToolNames = new Set([
-  'read_file', 'write_file', 'edit_file', 'apply_diff',
-  'run_command', 'bash', 'exec',
-  'grep_search', 'file_search', 'find_by_name', 'list_dir', 'view_file',
-  'schedule', 'manage_task',
-  'ask_question', 'generate_image', 'read_url_content', 'browser_subagent',
-  'run_code',
+  'ask_user_question', 'bash', 'pwsh', 'read', 'read_image', 'write', 'edit', 'str_replace_editor',
+  'glob', 'grep', 'present', 'skill', 'todo_write',
+  'create_goal', 'get_goal', 'update_goal',
+  'job_list', 'job_output', 'job_kill',
+  'subagent', 'subagent_fork', 'list_agents', 'list_subagent_models', 'send_message', 'interrupt_agent',
+  'web_fetch', 'web_search', 'load_workspace_dependencies', 'ralph', 'workflow',
+  'schedule_create', 'schedule_delete', 'schedule_list', 'schedule_update',
+  'cordis_inspect_list', 'cordis_inspect_query',
 ])
 
 /**
@@ -111,7 +120,9 @@ export function buildToolCatalog(ctx, catalogConfig = {}) {
       groupName: classification.name,
       isPlugin: classification.isPlugin,
       enabled,
-      canToggle: schema.name !== 'run_code' && !schema.name.startsWith('extensions_catalog_'),
+      // Takeover targets plugin-registered tools only: disabling a bundled core
+      // tool from this panel could leave the agent unable to read or edit files.
+      canToggle: classification.isPlugin && schema.name !== 'run_code' && !schema.name.startsWith('extensions_catalog_'),
     }
   })
 

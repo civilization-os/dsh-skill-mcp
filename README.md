@@ -88,10 +88,11 @@ Skill 页面支持：
 ```
 
 ### 2. 接管与安全拦截机制
-- **自动归类**：自动扫描运行时注册的所有工具，根据工具命名规则智能归属到所属插件（如 `session_*_autotask` 归属于 `dsh-autotask`，`drawio_*` 归属于 `dsh-drawio`，`browser_*` 归属于 `dsh-playwright`，`mcp__*` 归属于对应 MCP 服务）。
+- **自动归类**：自动扫描运行时注册的所有工具，先按 Harness 自带工具名单识别核心工具（归入 `系统核心工具 (Builtin)`），再按命名规则归属第三方插件（如 `session_*_autotask` 归属于 `dsh-autotask`，`drawio_*` 归属于 `dsh-drawio`，`browser_*` 归属于 `dsh-playwright`，`mcp__*` 归属于对应 MCP 服务）。
 - **单调守卫拦截 (`ctx.tools.guard`)**：当工具被配置为禁用时，Cordis 单调守卫将在工具调用前拦截并返回友好提示（`【Skill Catalog 接管】工具 "..." 当前已被禁用`），杜绝 Agent 越权或误调用。
 - **瀑布流预检查 (`tools/pre-execute`)**：在调度层提前做出 `deny` 决策。
-- **核心工具保护**：PTC 核心传输通道与内部 catalog 控制工具自动设为受保护状态，防止误禁用导致环境不可用。
+- **核心工具保护**：Harness 自带的核心工具（`read`、`write`、`edit`、`bash`、`glob`、`grep`、`str_replace_editor`、`job_*`、`skill`、`todo_write`、`web_search` 等）一律标记为受保护，开关禁用；PTC 核心传输通道（`run_code`）与内部 catalog 控制工具同样受保护。因此本面板的启停只作用于插件与 MCP 工具，不会让 Agent 失去读写文件或执行命令的基本能力。
+- **名单维护**：核心工具名单随 Harness 版本变化（当前对齐 0.2.0-rc.2 的 `dsh-tool-*`/`dsh-schedule` 包）。若 Harness 新增或改名了自带工具，需同步 `src/catalog.js` 的 `builtinToolNames`，否则新工具会被当成插件工具并允许禁用。
 
 ### 3. Web 界面操作
 设置中心的“**工具接管**”页面提供：
@@ -194,6 +195,14 @@ pnpm run web
 自动测试覆盖配置持久化、Skill 多路径、编辑和删除、单技能内容编辑与删除、用户分组、并发 revision、Skill 创建与调用权限、MCP 工具发现和卸载、轮询状态、中英文词典一致性，以及 DSH `webServer` 前缀路由、OPTIONS 预检和 RPC 信封协议桥接。测试不需要模型 API key。
 
 浏览器端 `/` 候选缓存失效兼容逻辑会使用公开的 `connection/reset` 客户端事件；服务端通过注入 `webServer` 与 `connection` 双重挂载 `/extensions` 路由并由 Cordis effect 托管生命周期，防止动态请求掉入前端静态资源的 405 fallback。自动测试验证 Host/RPC、HTTP 桥接和浏览器 bundle 构建，但没有在本仓库内启动完整 Harness Web 做端到端菜单点击验证。外部文件改动仍依赖 filesystem provider 先完成 watcher 失效，必要时可在变更后点击管理页“刷新”。
+
+## Harness 版本兼容
+
+当前版本在 DeepSeek Harness **0.2.0-rc.2** 上验证：`pnpm test`（33 项）与 `pnpm run build` 通过，并逐项核对了所用公开接口——`tools.register/get/schemas/guard`、`tools/pre-execute` 的 `deny` 决策、`skills.register/snapshot`、`webServer.register(kind: 'prefix')`、服务端 `connection.rpc.handle` 与浏览器端 `connection.rpc.call`、`settings.section` 槽位、`locale.register/bind`、`connection/reset` 事件、客户端 bundle 的 `window.__ModuleLoader__.load({ id, factory })` 格式。
+
+- `peerDependencies` 只声明**下界**（`@deepseek-ai/dsh-tools: >=0.1.5-rc.2`，无上界），以便跟随 Harness 的快速迭代：Harness 的插件兼容性判定用运行时版本比对这些范围。代价是不再对未来的破坏性变更做“响亮拒绝”，且**不保证前序版本**。
+- `@deepseek-ai/dsh-mcp-client` 与 `@deepseek-ai/dsh-skill-filesystem` 作为 `dependencies` 固定在 `0.2.0-rc.2`：插件只用它们的 `Config` 校验/规范化托管配置行（真正的连接由 Harness 自带的同名插件完成）。Schemastery 对象对未知字段**透传**，已实测 0.2.0 新增的 `maxInstructionBytes` 在旧 schema 下也不会被丢弃；但若未来 Harness 改的是必填约束或字段语义，这个固定版本会成为陈旧校验源，届时应同步升级。
+- 工具目录的核心工具名单同样是版本相关数据，见上文“名单维护”。
 
 ## 发布
 

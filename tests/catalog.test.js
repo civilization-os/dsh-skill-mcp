@@ -29,7 +29,42 @@ test('classifyTool correctly attributes tool prefixes to their respective plugin
   assert.equal(classifyTool('workspace_list_files').id, 'dsh-workspace-files')
   assert.equal(classifyTool('process_list').id, 'dsh-process-manager')
   assert.equal(classifyTool('extensions_list').id, 'dsh-skill-mcp')
-  assert.equal(classifyTool('read_file').id, 'builtin')
+  // Names shipped by the Harness runtime belong to the protected Builtin group.
+  assert.equal(classifyTool('read').id, 'builtin')
+  assert.equal(classifyTool('str_replace_editor').id, 'builtin')
+  assert.equal(classifyTool('job_list').id, 'builtin')
+  assert.equal(classifyTool('web_search').id, 'builtin')
+  assert.equal(classifyTool('read').isPlugin, false)
+})
+
+test('buildToolCatalog protects bundled core tools and keeps plugin tools toggleable', () => {
+  const names = ['read', 'write', 'bash', 'str_replace_editor', 'run_code', 'extensions_catalog_set', 'drawio_edit', 'mcp__demo__ping']
+  const ctx = { tools: { schemas: () => names.map(name => ({ name, description: `${name} tool`, parameters: {} })) } }
+
+  const { tools, groups, summary } = buildToolCatalog(ctx, {})
+  const byName = Object.fromEntries(tools.map(tool => [tool.name, tool]))
+
+  assert.equal(byName.read.canToggle, false)
+  assert.equal(byName.bash.canToggle, false)
+  assert.equal(byName.str_replace_editor.canToggle, false)
+  assert.equal(byName.read.groupId, 'builtin')
+  assert.equal(byName.read.isPlugin, false)
+
+  // PTC transport and the panel's own control tools stay protected too.
+  assert.equal(byName.run_code.canToggle, false)
+  assert.equal(byName.extensions_catalog_set.canToggle, false)
+
+  // Plugin-registered tools keep their takeover switches.
+  assert.equal(byName.drawio_edit.canToggle, true)
+  assert.equal(byName['mcp__demo__ping'].canToggle, true)
+  assert.equal(byName.drawio_edit.groupId, 'dsh-drawio')
+  assert.equal(byName['mcp__demo__ping'].groupId, 'mcp-demo')
+
+  const builtinGroup = groups.find(group => group.id === 'builtin')
+  assert.equal(builtinGroup.isPlugin, false)
+  assert.equal(builtinGroup.tools.every(tool => !tool.canToggle), true)
+  assert.equal(summary.total, names.length)
+  assert.equal(summary.disabled, 0)
 })
 
 test('store reads, updates, and toggles catalog tool status', async t => {
