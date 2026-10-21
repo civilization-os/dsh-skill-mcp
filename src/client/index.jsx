@@ -343,8 +343,9 @@ function SkillSourceForm({ source, t, busy, onSave, onCancel }) {
 
 function McpForm({ row, t, busy, onSave, onCancel }) {
   const prefix = useId()
-  const initial = row?.configuration ?? { transport: 'stdio', command: '', args: [], cwd: '' }
+  const initial = row?.configuration ?? { transport: 'stdio', command: '', args: [], cwd: '', reconnectInterval: 7 }
   const [transport, setTransport] = useState(initial.transport)
+  const [reconnectInterval, setReconnectInterval] = useState(initial.reconnectInterval ?? 7)
   const field = (name, required = true, multiline = false, value = '') => <label htmlFor={`${prefix}-${name}`}>{t(name)}{multiline
     ? <textarea id={`${prefix}-${name}`} name={name} rows={3} defaultValue={value} />
     : <input id={`${prefix}-${name}`} name={name} required={required} autoComplete="off" defaultValue={value} {...(name === 'id' ? { pattern: '[A-Za-z0-9_\\-]{1,32}', maxLength: 32 } : {})} />}</label>
@@ -352,13 +353,29 @@ function McpForm({ row, t, busy, onSave, onCancel }) {
     event.preventDefault()
     const data = Object.fromEntries(new FormData(event.currentTarget))
     const configuration = JSON.stringify(transport === 'stdio'
-      ? { transport, command: data.command, args: data.args.split(/\r?\n/).filter(Boolean), cwd: data.cwd }
-      : { transport, url: data.url })
+      ? { transport, command: data.command, args: data.args.split(/\r?\n/).filter(Boolean), cwd: data.cwd, reconnectInterval }
+      : { transport, url: data.url, reconnectInterval })
     void onSave({ id: row?.id ?? data.id, configuration })
   }}><fieldset disabled={busy}>{!row && field('id')}
     <label htmlFor={`${prefix}-transport`}>{t('transport')}<select id={`${prefix}-transport`} value={transport} onChange={event => setTransport(event.target.value)}>
       <option value="stdio">{t('stdio')}</option><option value="streamable-http">{t('http')}</option><option value="sse">{t('sse')}</option></select></label>
     {transport === 'stdio' ? <>{field('command', true, false, initial.command)}{field('args', false, true, (initial.args ?? []).join('\n'))}{field('cwd', false, false, initial.cwd)}</> : field('url', true, false, initial.url)}
+    <div className="dsh-mcp-slider-group">
+      <div className="dsh-mcp-slider-header">
+        <label htmlFor={`${prefix}-reconnect`}>{t('reconnectInterval')}</label>
+        <span className="dsh-mcp-slider-badge">{reconnectInterval} {t('seconds')}</span>
+      </div>
+      <input
+        id={`${prefix}-reconnect`}
+        type="range"
+        min="3"
+        max="60"
+        step="1"
+        value={reconnectInterval}
+        onChange={event => setReconnectInterval(Number(event.target.value))}
+      />
+      <p className="dsh-mcp-slider-hint">{t('reconnectIntervalDesc')}</p>
+    </div>
     <p>{t('secret')}</p>
     <div className="dsh-ext-actions"><button type="button" onClick={onCancel}>{t('cancel')}</button><button type="submit">{t(busy ? 'saving' : row ? 'saveChanges' : 'save')}</button></div>
   </fieldset></form>
@@ -367,6 +384,7 @@ function McpForm({ row, t, busy, onSave, onCancel }) {
 function AddForm({ kind, t, busy, onSave, onCancel }) {
   const prefix = useId()
   const [transport, setTransport] = useState('stdio')
+  const [reconnectInterval, setReconnectInterval] = useState(7)
   const field = (name, required = true, multiline = false) => <label htmlFor={`${prefix}-${name}`}>{t(name)}{multiline
     ? <textarea id={`${prefix}-${name}`} name={name} rows={3} />
     : <input id={`${prefix}-${name}`} name={name} required={required} autoComplete="off" {...(name === 'id' ? { pattern: '[A-Za-z0-9_\\-]{1,32}', maxLength: 32 } : {})} />}</label>
@@ -375,14 +393,30 @@ function AddForm({ kind, t, busy, onSave, onCancel }) {
     const data = Object.fromEntries(new FormData(event.currentTarget))
     const args = kind === 'skill' ? { directory: data.directory } : {
       id: data.id, configuration: JSON.stringify(transport === 'stdio'
-        ? { transport, command: data.command, args: data.args.split(/\r?\n/).filter(Boolean), cwd: data.cwd }
-        : { transport, url: data.url }),
+        ? { transport, command: data.command, args: data.args.split(/\r?\n/).filter(Boolean), cwd: data.cwd, reconnectInterval }
+        : { transport, url: data.url, reconnectInterval }),
     }
     void onSave(args)
   }}><fieldset disabled={busy}>{kind === 'skill' ? field('directory') : <>{field('id')}
       <label htmlFor={`${prefix}-transport`}>{t('transport')}<select id={`${prefix}-transport`} value={transport} onChange={event => setTransport(event.target.value)}>
         <option value="stdio">{t('stdio')}</option><option value="streamable-http">{t('http')}</option><option value="sse">{t('sse')}</option></select></label>
       {transport === 'stdio' ? <>{field('command')}{field('args', false, true)}{field('cwd', false)}</> : field('url')}
+      <div className="dsh-mcp-slider-group">
+        <div className="dsh-mcp-slider-header">
+          <label htmlFor={`${prefix}-reconnect`}>{t('reconnectInterval')}</label>
+          <span className="dsh-mcp-slider-badge">{reconnectInterval} {t('seconds')}</span>
+        </div>
+        <input
+          id={`${prefix}-reconnect`}
+          type="range"
+          min="3"
+          max="60"
+          step="1"
+          value={reconnectInterval}
+          onChange={event => setReconnectInterval(Number(event.target.value))}
+        />
+        <p className="dsh-mcp-slider-hint">{t('reconnectIntervalDesc')}</p>
+      </div>
       <p>{t('secret')}</p>
     </>}
     <div className="dsh-ext-actions"><button type="button" onClick={onCancel}>{t('cancel')}</button><button type="submit">{t(busy ? 'saving' : 'save')}</button></div>

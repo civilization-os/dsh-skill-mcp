@@ -136,6 +136,28 @@ test('web endpoints edit and remove MCP configurations without changing enabled 
   assert.deepEqual(removed.value.extensions, [])
 })
 
+test('web endpoints preserve and return reconnectInterval across add-mcp and update-mcp', async t => {
+  const { call } = await fixture(t)
+  const initial = await call('list', {})
+  const added = await call('add-mcp', {
+    id: 'test-reconnect',
+    configuration: JSON.stringify({ transport: 'streamable-http', url: 'http://localhost:8000/mcp', reconnectInterval: 12 }),
+    revision: initial.value.revision,
+  })
+  assert.equal(added.ok, true)
+  const item = added.value.extensions.find(e => e.id === 'test-reconnect')
+  assert.equal(item.configuration.reconnectInterval, 12)
+
+  const updated = await call('update-mcp', {
+    id: 'test-reconnect',
+    configuration: JSON.stringify({ transport: 'streamable-http', url: 'http://localhost:8000/mcp', reconnectInterval: 25 }),
+    revision: added.value.revision,
+  })
+  assert.equal(updated.ok, true)
+  const updatedItem = updated.value.extensions.find(e => e.id === 'test-reconnect')
+  assert.equal(updatedItem.configuration.reconnectInterval, 25)
+})
+
 test('a slower refresh cannot replace the result of a later save', async () => {
   let resolveRead
   const controller = new ExtensionsController(endpoint => endpoint === 'list'

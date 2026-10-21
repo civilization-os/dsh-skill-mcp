@@ -18,12 +18,26 @@ export const Config = Schema.object({
   url: Schema.string().required(),
   toolCallTimeoutMs: Schema.number().default(60_000),
   failOnStartupError: Schema.boolean().default(false),
+  reconnect: Schema.object({
+    enabled: Schema.boolean().default(true),
+    initialDelayMs: Schema.number().default(500),
+    maxDelayMs: Schema.number().default(7000),
+    maxAttempts: Schema.number().default(Number.MAX_SAFE_INTEGER),
+  }).default({}),
 })
 
 export async function apply(ctx, config) {
-  const client = new Client({ name: `dsh-sse-${config.serverName}`, version: '1.0.0' }, { capabilities: {} })
-  const transport = new SSEClientTransport(new URL(config.url))
+  const reconnectPolicy = {
+    enabled: config.reconnect?.enabled ?? true,
+    initialDelayMs: config.reconnect?.initialDelayMs ?? 500,
+    maxDelayMs: config.reconnect?.maxDelayMs ?? 7000,
+    maxAttempts: config.reconnect?.maxAttempts ?? Number.MAX_SAFE_INTEGER,
+  }
+
   let disposed = false
+  let reconnectTimer
+  let failedAttempts = 0
+  let currentGeneration
   let registrations = new Map()
   let synchronization = Promise.resolve()
 
@@ -31,13 +45,25 @@ export async function apply(ctx, config) {
     for (const dispose of registrations.values()) dispose()
     registrations = new Map()
   }
-  ctx.effect(() => () => {
-    disposed = true
-    clearTools()
-    void client.close().catch(() => {})
-  }, 'mcp-sse-client.connection')
 
-  const synchronizeTools = async () => {
+  const scheduleReconnect = (cause) => {
+    if (disposed || !reconnectPolicy.enabled) return
+    if (reconnectTimer !== undefined) return
+    failedAttempts++
+    if (failedAttempts > reconnectPolicy.maxAttempts) {
+      ctx.logger.error(`mcp-sse-client(${config.serverName}): giving up after ${reconnectPolicy.maxAttempts} failed reconnect attempts`)
+      return
+    }
+    const delayMs = Math.min(reconnectPolicy.maxDelayMs, reconnectPolicy.initialDelayMs * (2 ** Math.min(failedAttempts - 1, 30)))
+    ctx.logger.warn(`mcp-sse-client(${config.serverName}): connection lost or failed (${messageOf(cause)}); reconnecting in ${delayMs}ms (attempt ${failedAttempts})`)
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = undefined
+      void connectGeneration(false)
+    }, delayMs)
+    reconnectTimer.unref?.()
+  }
+
+  const synchronizeTools = async (client, generation) => {
     const definitions = new Map()
     let cursor
     do {
@@ -52,7 +78,7 @@ export async function apply(ctx, config) {
       }
       cursor = response.nextCursor
     } while (cursor)
-    if (disposed) return
+    if (disposed || generation.closed) return
     clearTools()
     const next = new Map()
     try {
@@ -64,21 +90,60 @@ export async function apply(ctx, config) {
     }
   }
 
-  client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
-    synchronization = synchronization.then(synchronizeTools).catch(error => {
-      ctx.logger.warn(`mcp-sse-client(${config.serverName}): tool refresh failed: ${messageOf(error)}`)
-    })
-  })
+  async function connectGeneration(startup) {
+    if (disposed) return
+    const client = new Client({ name: `dsh-sse-${config.serverName}`, version: '1.0.0' }, { capabilities: {} })
+    const transport = new SSEClientTransport(new URL(config.url))
+    const generation = { client, transport, closed: false }
+    currentGeneration = generation
 
-  try {
-    await client.connect(transport)
-    await synchronizeTools()
-  } catch (error) {
-    clearTools()
-    await client.close().catch(() => {})
-    if (config.failOnStartupError) throw new Error(`mcp-sse-client(${config.serverName}): initial connection failed: ${messageOf(error)}`, { cause: error })
-    ctx.logger.warn(`mcp-sse-client(${config.serverName}): initial connection failed: ${messageOf(error)}`)
+    const onDisconnect = (err) => {
+      if (generation.closed || disposed) return
+      generation.closed = true
+      clearTools()
+      void client.close().catch(() => {})
+      if (currentGeneration === generation) {
+        scheduleReconnect(err ?? new Error('connection closed'))
+      }
+    }
+
+    client.onclose = () => onDisconnect()
+    client.onerror = (err) => onDisconnect(err)
+
+    client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+      if (generation.closed || disposed) return
+      synchronization = synchronization.then(() => synchronizeTools(client, generation)).catch(error => {
+        ctx.logger.warn(`mcp-sse-client(${config.serverName}): tool refresh failed: ${messageOf(error)}`)
+      })
+    })
+
+    try {
+      await client.connect(transport)
+      await synchronizeTools(client, generation)
+      failedAttempts = 0
+      ctx.logger.info(`mcp-sse-client(${config.serverName}): connected and synchronized tools`)
+    } catch (error) {
+      onDisconnect(error)
+      if (startup && config.failOnStartupError) {
+        throw new Error(`mcp-sse-client(${config.serverName}): initial connection failed: ${messageOf(error)}`, { cause: error })
+      }
+    }
   }
+
+  ctx.effect(() => () => {
+    disposed = true
+    if (reconnectTimer !== undefined) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = undefined
+    }
+    clearTools()
+    if (currentGeneration && !currentGeneration.closed) {
+      currentGeneration.closed = true
+      void currentGeneration.client.close().catch(() => {})
+    }
+  }, 'mcp-sse-client.connection')
+
+  await connectGeneration(true)
 }
 
 function createTool(client, publicName, tool, timeout) {

@@ -55,8 +55,18 @@ export async function describeExtensions(store, ctx, options = {}) {
           : row.config.customSkillDirs[0],
       transport: row.config.transport ?? '',
       configuration: row.config.serverName ? (row.config.transport === 'stdio'
-        ? { transport: row.config.transport, command: row.config.command, args: row.config.args ?? [], cwd: row.config.cwd ?? '' }
-        : { transport: row.config.transport, url: row.config.url }) : undefined,
+        ? {
+            transport: row.config.transport,
+            command: row.config.command,
+            args: row.config.args ?? [],
+            cwd: row.config.cwd ?? '',
+            reconnectInterval: row.config.reconnect?.maxDelayMs ? Math.round(row.config.reconnect.maxDelayMs / 1000) : 7,
+          }
+        : {
+            transport: row.config.transport,
+            url: row.config.url,
+            reconnectInterval: row.config.reconnect?.maxDelayMs ? Math.round(row.config.reconnect.maxDelayMs / 1000) : 7,
+          }) : undefined,
       tools: row.config.serverName
         ? toolNames.filter(name => name.startsWith(`mcp__${row.id}__`)).sort() : [],
     })),

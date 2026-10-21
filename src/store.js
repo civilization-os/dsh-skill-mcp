@@ -39,12 +39,13 @@ function validateId(id) {
 }
 
 function parsePatch(value) {
-  if (!Array.isArray(value) || value.length !== 1 || !Array.isArray(value[0]?.insert)
-    || Object.keys(value[0]).join() !== 'insert') throw new Error('Expected one managed insert operation.')
+  if (!Array.isArray(value)) throw new Error('Expected patch array.')
+  const insertOp = value.find(row => row && typeof row === 'object' && Array.isArray(row.insert))
+  if (!insertOp) throw new Error('Expected one managed insert operation.')
   const ids = new Set()
   const managed = []
   const preserved = []
-  for (const row of value[0].insert) {
+  for (const row of insertOp.insert) {
     if (row?.id === 'extension-manager' && row.name === managerModule) {
       if (ids.has(row.id)) throw new Error('Duplicate extension id.')
       ids.add(row.id)
@@ -69,7 +70,8 @@ function parsePatch(value) {
     } else throw new Error('Unknown managed plugin module.')
     managed.push(row)
   }
-  return { managed, preserved }
+  const unmanagedRows = value.filter(row => row !== insertOp)
+  return { managed, preserved, unmanagedRows }
 }
 
 /** Validate the patch and return only extension rows owned by the manager. */
@@ -84,7 +86,8 @@ function markedRows(content) {
   if (start < 0 || end < start || content.indexOf(blockStart, start + blockStart.length) >= 0
     || content.indexOf(blockEnd, end + blockEnd.length) >= 0) throw new Error('Invalid dsh-skill-mcp managed block.')
   const bodyStart = start + blockStart.length
-  return { start, end: end + blockEnd.length, rows: validatePatch(parse(content.slice(bodyStart, end))) }
+  const parsed = parsePatch(parse(content.slice(bodyStart, end)))
+  return { start, end: end + blockEnd.length, rows: parsed.managed, unmanagedRows: parsed.unmanagedRows }
 }
 
 function legacyPatch(content) {
@@ -99,7 +102,10 @@ function renderBlock(rows) {
 function writeManagedRows(content, rows) {
   const marked = markedRows(content)
   const block = renderBlock(rows)
-  if (marked) return `${content.slice(0, marked.start)}${block}${content.slice(marked.end)}`
+  if (marked) {
+    const unmanaged = marked.unmanagedRows?.length ? `\n${stringify(marked.unmanagedRows).trimEnd()}\n` : ''
+    return `${content.slice(0, marked.start)}${block}${unmanaged}${content.slice(marked.end)}`
+  }
   const legacy = legacyPatch(content)
   if (legacy) return `${JSON.stringify([{ insert: [...legacy.preserved, ...rows] }], null, 2)}\n`
   if (/^[ \t]*\[\][ \t]*$/m.test(content)) return content.replace(/^[ \t]*\[\][ \t]*$/m, block)
@@ -121,10 +127,28 @@ export class ExtensionStore {
   /** Migrate managed MCP rows so an unavailable server cannot reject profile startup. */
   async ensureNonFatalMcpStartup() {
     const rows = await this.read()
-    if (!rows.some(row => row.config.serverName && row.config.failOnStartupError !== false)) return
+    let needsUpdate = false
+    for (const row of rows) {
+      if (row.config?.serverName) {
+        if (row.config.failOnStartupError !== false || !row.config.reconnect || row.config.reconnect.maxAttempts !== Number.MAX_SAFE_INTEGER) {
+          needsUpdate = true
+          break
+        }
+      }
+    }
+    if (!needsUpdate) return
     await this.update(current => {
       for (const row of current) {
-        if (row.config.serverName) row.config.failOnStartupError = false
+        if (row.config?.serverName) {
+          row.config.failOnStartupError = false
+          const maxDelay = row.config.reconnect?.maxDelayMs ?? 7000
+          row.config.reconnect = {
+            enabled: true,
+            initialDelayMs: 500,
+            maxDelayMs: Math.min(60_000, Math.max(3_000, maxDelay)),
+            maxAttempts: Number.MAX_SAFE_INTEGER,
+          }
+        }
       }
     })
   }
@@ -195,11 +219,23 @@ export class ExtensionStore {
   normalizeMcp(id, input) {
     // Authentication values belong in the host credential setup, not tool arguments or logs.
     if (input.env || input.headers) throw new Error('This version does not accept environment values or authentication headers.')
+    const reconnectIntervalSec = Math.min(60, Math.max(3, Math.round(Number(input.reconnectInterval ?? 7)) || 7))
+    const reconnect = {
+      enabled: true,
+      initialDelayMs: 500,
+      maxDelayMs: reconnectIntervalSec * 1000,
+      maxAttempts: Number.MAX_SAFE_INTEGER,
+    }
     const normalized = input.transport === 'stdio' ? {
       ...input,
       command: typeof input.command === 'string' ? normalizeWindowsPath(input.command) : input.command,
       cwd: typeof input.cwd === 'string' && input.cwd ? normalizeWindowsPath(input.cwd) : input.cwd,
-    } : input
+      reconnect,
+    } : {
+      ...input,
+      reconnect,
+    }
+    delete normalized.reconnectInterval
     const config = input.transport === 'sse'
       ? SseMcpConfig({ ...normalized, serverName: id, failOnStartupError: false })
       : McpConfig({ ...normalized, serverName: id, failOnStartupError: false })

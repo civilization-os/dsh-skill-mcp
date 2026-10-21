@@ -87,6 +87,27 @@ test('MCP transport validation rejects credential-bearing URLs and malformed con
   assert.deepEqual(rows.map(row => row.disabled), [true, true, true, true])
 })
 
+test('MCP reconnectInterval configures infinite retry with bounded delay and clamps threshold', async t => {
+  const { store } = await fixture(t)
+  await store.addMcp('default-mcp', { transport: 'streamable-http', url: 'http://localhost:9000/mcp' })
+  await store.addMcp('custom-mcp', { transport: 'stdio', command: 'node', reconnectInterval: 15 })
+  await store.addMcp('min-mcp', { transport: 'streamable-http', url: 'http://localhost:9000/min', reconnectInterval: 1 })
+  await store.addMcp('max-mcp', { transport: 'sse', url: 'http://localhost:9000/sse', reconnectInterval: 100 })
+
+  const rows = await store.read()
+  const def = rows.find(r => r.id === 'default-mcp')
+  const custom = rows.find(r => r.id === 'custom-mcp')
+  const min = rows.find(r => r.id === 'min-mcp')
+  const max = rows.find(r => r.id === 'max-mcp')
+
+  assert.equal(def.config.reconnect.maxDelayMs, 7000)
+  assert.equal(def.config.reconnect.maxAttempts, Number.MAX_SAFE_INTEGER)
+  assert.equal(custom.config.reconnect.maxDelayMs, 15000)
+  assert.equal(custom.config.reconnect.maxAttempts, Number.MAX_SAFE_INTEGER)
+  assert.equal(min.config.reconnect.maxDelayMs, 3000)
+  assert.equal(max.config.reconnect.maxDelayMs, 60000)
+})
+
 test('strict MCP startup settings migrate to non-fatal startup', async t => {
   const { path, store } = await fixture(t)
   await store.addMcp('offline', { transport: 'streamable-http', url: 'http://127.0.0.1:1/mcp' })

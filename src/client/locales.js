@@ -51,6 +51,9 @@ export const zh = {
   noCatalogResultsHint: '请尝试修改搜索词或选择其他插件分组。',
   toolProtected: '核心保留',
   toolTakeoverHint: '此工具受 skill-catalog 统一管理。',
+  reconnectInterval: '重连周期阈值',
+  reconnectIntervalDesc: '服务端断开后自动探测并恢复连接的最大等待时间（范围 3–60 秒，默认 7 秒）。',
+  seconds: '秒',
 }
 export const en = {
   navSkill: 'Skills', navMcp: 'MCP',
@@ -104,4 +107,7 @@ export const en = {
   noCatalogResultsHint: 'Try adjusting your search terms or filter.',
   toolProtected: 'Protected',
   toolTakeoverHint: 'This tool is managed under skill-catalog.',
+  reconnectInterval: 'Reconnect Interval',
+  reconnectIntervalDesc: 'Maximum wait time before retrying dropped connections (range 3–60s, default 7s).',
+  seconds: 's',
 }

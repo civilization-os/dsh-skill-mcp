@@ -145,7 +145,11 @@ MCP 工具是提供给模型的工具 schema，不是用户 `/` 命令，因此�
 
 当前版本不接受 `env`、认证 header、带凭据或 token 查询参数的 URL。请勿把密钥放进工具参数、MCP 地址或提交到仓库。
 
-MCP 对端离线、命令启动失败或首次工具发现失败不会阻止 DSH 启动。stdio 与 Streamable HTTP 使用 Harness MCP client 的后台重连策略；旧版 SSE 当前依赖连接自身，在断线后可通过刷新配置重新加载。设置页在连接恢复并发现工具后更新状态。插件加载时也会把旧版本写入的严格启动配置迁移为非致命启动策略。
+### MCP 自动重连与周期配置
+
+- **重连周期滑块（3–60 秒，默认 7 秒）**：用户在添加或编辑 MCP 服务器时，可使用滑块指定最大重连等待阈值（`reconnectInterval`）。
+- **无限长效重试保底**：解除底层连续 10 次失败后彻底放弃重试的硬限制，改为长效保底探测模式。当服务端离线或重启时，客户端从 500ms 开始指数退避，并在达到设定的阈值后持续周期探测；只要 MCP 服务端恢复，客户端将在设定的阈值时间内自动重新建立连接并热重载工具。
+- **全协议统一管理**：`stdio`、`streamable-http` 与旧版 `sse` 均统一纳入监督重连体系，端点离线或初次发现失败绝不阻塞 DSH 正常启动。
 
 ## Agent 工具与 Skill
 
@@ -196,12 +200,12 @@ pnpm run web
 
 浏览器端 `/` 候选缓存失效兼容逻辑会使用公开的 `connection/reset` 客户端事件；服务端通过注入 `webServer` 与 `connection` 双重挂载 `/extensions` 路由并由 Cordis effect 托管生命周期，防止动态请求掉入前端静态资源的 405 fallback。自动测试验证 Host/RPC、HTTP 桥接和浏览器 bundle 构建，但没有在本仓库内启动完整 Harness Web 做端到端菜单点击验证。外部文件改动仍依赖 filesystem provider 先完成 watcher 失效，必要时可在变更后点击管理页“刷新”。
 
-## Harness 版本兼容
+## Harness / Cordis 版本兼容
 
-当前版本在 DeepSeek Harness **0.2.0-rc.2** 上验证：`pnpm test`（33 项）与 `pnpm run build` 通过，并逐项核对了所用公开接口——`tools.register/get/schemas/guard`、`tools/pre-execute` 的 `deny` 决策、`skills.register/snapshot`、`webServer.register(kind: 'prefix')`、服务端 `connection.rpc.handle` 与浏览器端 `connection.rpc.call`、`settings.section` 槽位、`locale.register/bind`、`connection/reset` 事件、客户端 bundle 的 `window.__ModuleLoader__.load({ id, factory })` 格式。
+当前版本在 DeepSeek Harness **0.2.1-rc.2** 及 Cordis **4.0.5** 上验证：`pnpm test`（35 项全部通过）与 `pnpm run build` 通过，并逐项核对了所用公开接口——`tools.register/get/schemas/guard`、`tools/pre-execute` 的 `deny` 决策、`skills.register/snapshot`、`webServer.register(kind: 'prefix')`、服务端 `connection.rpc.handle` 与浏览器端 `connection.rpc.call`、`settings.section` 槽位、`locale.register/bind`、`connection/reset` 事件、客户端 bundle 的 `window.__ModuleLoader__.load({ id, factory })` 格式。
 
-- `peerDependencies` 只声明**下界**（`@deepseek-ai/dsh-tools: >=0.1.5-rc.2`，无上界），以便跟随 Harness 的快速迭代：Harness 的插件兼容性判定用运行时版本比对这些范围。代价是不再对未来的破坏性变更做“响亮拒绝”，且**不保证前序版本**。
-- `@deepseek-ai/dsh-mcp-client` 与 `@deepseek-ai/dsh-skill-filesystem` 作为 `dependencies` 固定在 `0.2.0-rc.2`：插件只用它们的 `Config` 校验/规范化托管配置行（真正的连接由 Harness 自带的同名插件完成）。Schemastery 对象对未知字段**透传**，已实测 0.2.0 新增的 `maxInstructionBytes` 在旧 schema 下也不会被丢弃；但若未来 Harness 改的是必填约束或字段语义，这个固定版本会成为陈旧校验源，届时应同步升级。
+- `peerDependencies` 只声明**下界**（`@deepseek-ai/cordis: ^4.0.2`，`@deepseek-ai/dsh-tools: >=0.1.5-rc.2`，无上界），以便跟随 Harness 的快速迭代：Harness 的插件兼容性判定用运行时版本比对这些范围。
+- `@deepseek-ai/dsh-mcp-client` 与 `@deepseek-ai/dsh-skill-filesystem` 作为 `dependencies` 对齐至 `0.2.1-rc.2`，并对齐 `@deepseek-ai/schemastery: ~3.18.5`。
 - 工具目录的核心工具名单同样是版本相关数据，见上文“名单维护”。
 
 ## 发布
