@@ -1,5 +1,8 @@
 /** Both dictionaries use the same key vocabulary; checked by tests. */
 export const zh = {
+  panel: '技能与 MCP',
+  panelTitle: '技能与外部扩展',
+  panelIntro: '管理自定义 Skill 技能库、MCP 工具服务与系统工具权限。',
   navSkill: 'Skill 管理', navMcp: 'MCP 管理',
   skillIntro: '配置一个或多个 Skill 路径；每个路径下可以包含多个技能。', mcpIntro: '管理外部工具服务器，让它们在当前配置中可用。',
   skills: 'Skill 路径', mcp: 'MCP 服务器', refresh: '刷新', add: '添加路径', addMcp: '添加服务器', newSkill: '新建 Skill',
@@ -56,6 +59,9 @@ export const zh = {
   seconds: '秒',
 }
 export const en = {
+  panel: 'Skills & MCP',
+  panelTitle: 'Skills & External Extensions',
+  panelIntro: 'Manage custom Skill repositories, MCP tool servers, and tool permissions.',
   navSkill: 'Skills', navMcp: 'MCP',
   skillIntro: 'Configure one or more Skill paths; each path can contain multiple skills.', mcpIntro: 'Manage external tool servers for this configuration.',
   skills: 'Skill paths', mcp: 'MCP servers', refresh: 'Refresh', add: 'Add path', addMcp: 'Add server', newSkill: 'New Skill',

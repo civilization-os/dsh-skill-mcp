@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "技能与 MCP 管理",
+    "description": "管理外部 Skill 技能路径与 MCP 服务连接，赋予模型外部工具调用能力。"
+  }
+}

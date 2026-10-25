@@ -40,6 +40,16 @@ export function apply(ctx) {
   section('skill-manager', 'skill')
   section('mcp-manager', 'mcp')
   section('skill-catalog', 'catalog')
+
+  const PANEL_ID = 'skill-mcp'
+  ctx.slots.inject('main', () => ctx.slots.register({
+    name: 'main', key: PANEL_ID, locale: namespace,
+    inject: () => face,
+  }, SkillMcpPage))
+  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
+    name: 'sidebar.panellist', id: PANEL_ID, order: 21, locale: namespace,
+    label: () => t('panel'),
+  }, SkillMcpIcon))
 }
 
 export function SkillSection({ t, useManager, request }) {
@@ -566,3 +576,31 @@ export function CatalogSection({ t, useManager, request }) {
   </section>
 }
 
+
+
+export function SkillMcpIcon({ size = 16 }) {
+  return <svg viewBox="0 0 16 16" width={size} height={size} fill="none" aria-hidden="true" style={{ display: "block" }}>
+    <path d="M5.5 2v3M10.5 2v3M3.5 5h9v3.8c0 2.2-1.8 4-4 4h-1c-2.2 0-4-1.8-4-4V5z" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M8 12.8v1.7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+  </svg>
+}
+
+export function SkillMcpPage({ t, useManager, request }) {
+  const [activeTab, setActiveTab] = useState("skills")
+  return <div className="dsh-ext-page">
+    <header className="dsh-ext-page-head">
+      <h1 className="dsh-ext-page-title">{t("panelTitle")}</h1>
+      <p className="dsh-ext-page-intro">{t("panelIntro")}</p>
+      <div className="dsh-ext-page-tabs" role="tablist">
+        <button type="button" role="tab" aria-selected={activeTab === "skills"} className={activeTab === "skills" ? "is-active" : ""} onClick={() => setActiveTab("skills")}>{t("navSkill")}</button>
+        <button type="button" role="tab" aria-selected={activeTab === "mcp"} className={activeTab === "mcp" ? "is-active" : ""} onClick={() => setActiveTab("mcp")}>{t("navMcp")}</button>
+        <button type="button" role="tab" aria-selected={activeTab === "catalog"} className={activeTab === "catalog" ? "is-active" : ""} onClick={() => setActiveTab("catalog")}>{t("navCatalog")}</button>
+      </div>
+    </header>
+    <main className="dsh-ext-page-body">
+      {activeTab === "skills" && <SkillSection t={t} useManager={useManager} request={request} />}
+      {activeTab === "mcp" && <McpSection t={t} useManager={useManager} request={request} />}
+      {activeTab === "catalog" && <CatalogSection t={t} useManager={useManager} request={request} />}
+    </main>
+  </div>
+}
