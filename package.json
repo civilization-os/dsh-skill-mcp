@@ -1,7 +1,7 @@
 {
   "name": "@civilization/deepseek-harness-skill-mcp",
   "version": "0.3.3",
-  "description": "Skill path and MCP server management for DeepSeek Harness Web",
+  "description": "管理外部 Skill 技能路径与 MCP 服务连接，赋予模型外部工具调用能力。",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
