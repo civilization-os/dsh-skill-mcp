@@ -31,17 +31,7 @@ export function apply(ctx) {
     return ok
   }
   const face = { hooks: { manager: controller }, request }
-  // The three sections share one controller and managed patch; each kind gets its own settings page.
-  const section = (id, kind) => ctx.slots.inject('settings.section', () => ctx.slots.register({
-    name: 'settings.section', id, order: kind === 'skill' ? 16 : kind === 'mcp' ? 17 : 18,
-    label: () => t(kind === 'skill' ? 'navSkill' : kind === 'mcp' ? 'navMcp' : 'navCatalog'), locale: namespace,
-    inject: () => face,
-  }, kind === 'skill' ? SkillSection : kind === 'mcp' ? McpSection : CatalogSection))
-  section('skill-manager', 'skill')
-  section('mcp-manager', 'mcp')
-  section('skill-catalog', 'catalog')
-
-  const PANEL_ID = 'skill-mcp'
+    const PANEL_ID = 'skill-mcp'
   ctx.slots.inject('main', () => ctx.slots.register({
     name: 'main', key: PANEL_ID, locale: namespace,
     inject: () => face,
