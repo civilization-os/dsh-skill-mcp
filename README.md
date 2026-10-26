@@ -202,10 +202,10 @@ pnpm run web
 
 ## Harness / Cordis 版本兼容
 
-当前版本在 DeepSeek Harness **0.2.1-rc.2** 及 Cordis **4.0.5** 上验证：`pnpm test`（35 项全部通过）与 `pnpm run build` 通过，并逐项核对了所用公开接口——`tools.register/get/schemas/guard`、`tools/pre-execute` 的 `deny` 决策、`skills.register/snapshot`、`webServer.register(kind: 'prefix')`、服务端 `connection.rpc.handle` 与浏览器端 `connection.rpc.call`、`settings.section` 槽位、`locale.register/bind`、`connection/reset` 事件、客户端 bundle 的 `window.__ModuleLoader__.load({ id, factory })` 格式。
+当前版本在 DeepSeek Harness **0.2.1-rc.3** 及 Cordis **4.0.5** 上验证：`pnpm test`（35 项全部通过）与 `pnpm run build` 通过，并逐项核对了所用公开接口——`tools.register/get/schemas/guard`、`tools/pre-execute` 的 `deny` 决策、`skills.register/snapshot`、`webServer.register(kind: 'prefix')`、服务端 `connection.rpc.handle` 与浏览器端 `connection.rpc.call`、`settings.section` 槽位、`locale.register/bind`、`connection/reset` 事件、客户端 bundle 的 `window.__ModuleLoader__.load({ id, factory })` 格式。
 
 - `peerDependencies` 只声明**下界**（`@deepseek-ai/cordis: ^4.0.2`，`@deepseek-ai/dsh-tools: >=0.1.5-rc.2`，无上界），以便跟随 Harness 的快速迭代：Harness 的插件兼容性判定用运行时版本比对这些范围。
-- `@deepseek-ai/dsh-mcp-client` 与 `@deepseek-ai/dsh-skill-filesystem` 作为 `dependencies` 对齐至 `0.2.1-rc.2`，并对齐 `@deepseek-ai/schemastery: ~3.18.5`。
+- `@deepseek-ai/dsh-mcp-client` 与 `@deepseek-ai/dsh-skill-filesystem` 作为 `dependencies` 对齐至 `>=0.2.1-rc.2 <0.3.0`（兼容 `0.2.1-rc.3`），并对齐 `@deepseek-ai/schemastery: ~3.18.5`。
 - 工具目录的核心工具名单同样是版本相关数据，见上文“名单维护”。
 
 ## 发布

@@ -1,6 +1,6 @@
 {
   "name": "@civilization/deepseek-harness-skill-mcp",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "管理外部 Skill 技能路径与 MCP 服务连接，赋予模型外部工具调用能力。",
   "license": "Apache-2.0",
   "repository": {
@@ -71,9 +71,9 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.5",
-    "@deepseek-ai/dsh-skill": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-system-prompt": "0.2.1-rc.2",
-    "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-skill": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-system-prompt": "0.2.1-rc.3",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.3",
     "esbuild": "^0.28.2",
     "react": "^19.2.8"
   }
