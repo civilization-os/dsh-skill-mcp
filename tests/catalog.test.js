@@ -113,13 +113,14 @@ test('plugin guard intercepts disabled tools and allows enabled tools', async t 
     execute: async () => ({ success: true }),
   }))
 
-  // 验证 guardReason 会返回拒绝理由
-  const reason = ctx.tools.guardReason({ name: 'demo_tool', arguments: {} })
+  // 验证 guardReason / checkGuards 会返回拒绝理由
+  const checkGuard = (ctx.tools.checkGuards || ctx.tools.guardReason).bind(ctx.tools)
+  const reason = checkGuard({ name: 'demo_tool', arguments: {} })
   assert.match(reason, /Skill Catalog/)
   assert.match(reason, /已被禁用/)
 
   // 验证未被禁用的工具无 guardReason
-  const safeReason = ctx.tools.guardReason({ name: 'other_tool', arguments: {} })
+  const safeReason = checkGuard({ name: 'other_tool', arguments: {} })
   assert.equal(safeReason, undefined)
 })
 

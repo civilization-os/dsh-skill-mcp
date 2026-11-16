@@ -18,6 +18,24 @@ import * as manager from '../src/index.js'
 import * as SseMcpClient from '../src/mcp-sse.js'
 import { ExtensionStore } from '../src/store.js'
 
+function ensureExecutor(ctx) {
+  try {
+    ctx.tools.setExecutor({
+      execute: async (call) => {
+        const t = ctx.tools.get(call.name);
+        if (!t) return { callId: call.callId, name: call.name, isError: true, error: { message: 'Tool not found' } };
+        try {
+          const val = await t.execute(call.arguments, { signal: call.signal || AbortSignal.timeout(5000), agent: call.agent });
+          const content = t.output?.render ? t.output.render(call.arguments, val) : [{ type: 'text', text: JSON.stringify(val) }];
+          return { callId: call.callId, name: call.name, isError: false, value: val, content };
+        } catch (err) {
+          return { callId: call.callId, name: call.name, isError: true, error: err };
+        }
+      }
+    });
+  } catch {}
+}
+
 async function fixture(t) {
   const directory = await mkdtemp(join(tmpdir(), 'dsh-extensions-'))
   t.after(() => rm(directory, { recursive: true, force: true }))
@@ -173,6 +191,7 @@ test('real Cordis tool dispatch persists configuration and unregisters on dispos
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(Tools)
   await ctx.plugin(Skills)
+  ensureExecutor(ctx)
   const fiber = ctx.plugin(manager, { patchPath: path })
   await fiber
   const call = (name, args) => ctx.tools.execute({ callId: name, name, arguments: args, signal: new AbortController().signal })
@@ -200,6 +219,7 @@ test('a saved skill source loads through the real filesystem provider and inspec
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(Tools)
   await ctx.plugin(Skills)
+  ensureExecutor(ctx)
   await ctx.plugin(FilesystemSkills, { ...row.config, watch: false })
   await ctx.plugin(manager, { patchPath: path })
   const result = await ctx.tools.execute({ callId: 'inspect', name: 'extensions_inspect', arguments: { cwd: directory }, signal: new AbortController().signal })
@@ -237,6 +257,7 @@ test('saved HTTP MCP configuration discovers tools and removes them on unload', 
   const [row] = await store.read()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(Tools)
+  ensureExecutor(ctx)
   const fiber = ctx.plugin(McpClient, row.config)
   await fiber
   assert.equal(ctx.tools.schemas().some(tool => tool.name === 'mcp__probe__ping'), true)
@@ -296,6 +317,7 @@ test('saved legacy SSE MCP configuration discovers tools and removes them on unl
   row.config.failOnStartupError = true
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(Tools)
+  ensureExecutor(ctx)
   const fiber = ctx.plugin(SseMcpClient, row.config)
   await fiber
   assert.equal(ctx.tools.schemas().some(tool => tool.name === 'mcp__legacy__ping'), true)
@@ -324,6 +346,7 @@ test('an unavailable HTTP MCP server does not reject plugin startup', { timeout:
   t.after(() => ctx.fiber.dispose())
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(Tools)
+  ensureExecutor(ctx)
   const fiber = ctx.plugin(McpClient, row.config)
   await assert.doesNotReject(async () => { await fiber })
   assert.equal(ctx.tools.schemas().some(tool => tool.name.startsWith('mcp__offline__')), false)
